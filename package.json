@@ -1,0 +1,164 @@
+{
+  "name": "spin-your-ai-vscode",
+  "displayName": "Spin Your AI",
+  "description": "Spin up AI models from your editor, powered by local and cloud AI providers.",
+  "version": "1.0.1",
+  "publisher": "abhijeetjha0",
+  "icon": "media/icon-128.png",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Machine Learning",
+    "Other"
+  ],
+  "activationEvents": [
+    "onView:spin-your-ai.chatView"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "spin-your-ai.start",
+        "title": "Spin Your AI: Start"
+      },
+      {
+        "command": "spin-your-ai.explainCode",
+        "title": "Spin AI: Explain Code"
+      },
+      {
+        "command": "spin-your-ai.refactorCode",
+        "title": "Spin AI: Refactor Code"
+      },
+      {
+        "command": "spin-your-ai.fixBug",
+        "title": "Spin AI: Fix Bug"
+      },
+      {
+        "command": "spin-your-ai.setOpenAiKey",
+        "title": "Spin AI: Set OpenAI Key"
+      },
+      {
+        "command": "spin-your-ai.setAnthropicKey",
+        "title": "Spin AI: Set Anthropic Key"
+      },
+      {
+        "command": "spin-your-ai.setGeminiKey",
+        "title": "Spin AI: Set Gemini Key"
+      },
+      {
+        "command": "spin-your-ai.setOpenRouterKey",
+        "title": "Spin AI: Set OpenRouter Key"
+      },
+      {
+        "command": "spin-your-ai.setHuggingFaceKey",
+        "title": "Spin AI: Set Hugging Face Key"
+      },
+      {
+        "command": "spin-your-ai.setOllamaCloudKey",
+        "title": "Spin AI: Set Ollama Cloud Key"
+      }
+    ],
+    "menus": {
+      "editor/context": [
+        {
+          "command": "spin-your-ai.explainCode",
+          "group": "spin-ai@1"
+        },
+        {
+          "command": "spin-your-ai.refactorCode",
+          "group": "spin-ai@2"
+        },
+        {
+          "command": "spin-your-ai.fixBug",
+          "group": "spin-ai@3"
+        }
+      ]
+    },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "spin-your-ai-sidebar",
+          "title": "Spin Your AI",
+          "icon": "media/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "spin-your-ai-sidebar": [
+        {
+          "type": "webview",
+          "id": "spin-your-ai.chatView",
+          "name": "Chat"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Spin Your AI",
+      "properties": {
+        "spinYourAi.defaultProvider": {
+          "type": "string",
+          "default": "ollama",
+          "description": "Default AI provider to use."
+        }
+      }
+    },
+    "walkthroughs": [
+      {
+        "id": "spin-your-ai.welcome",
+        "title": "Welcome to Spin Your AI",
+        "description": "Set up your AI providers and start spinning!",
+        "steps": [
+          {
+            "id": "setup-local",
+            "title": "1. Local AI (Ollama)",
+            "description": "Spin Your AI connects to your local Ollama instance on localhost:11434 out of the box. No keys required!",
+            "media": {
+              "markdown": "media/walkthrough/local.md"
+            }
+          },
+          {
+            "id": "setup-cloud",
+            "title": "2. Cloud AI API Keys",
+            "description": "Want to use GPT-4o, Claude 3.5, or Gemini 1.5? Configure your API keys securely in your OS keychain.\n[Set OpenAI Key](command:spin-your-ai.setOpenAiKey)\n[Set Anthropic Key](command:spin-your-ai.setAnthropicKey)\n[Set Gemini Key](command:spin-your-ai.setGeminiKey)\n[Set OpenRouter Key](command:spin-your-ai.setOpenRouterKey)\n[Set Hugging Face Key](command:spin-your-ai.setHuggingFaceKey)\n[Set Ollama Cloud Key](command:spin-your-ai.setOllamaCloudKey)",
+            "media": {
+              "markdown": "media/walkthrough/cloud.md"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run package",
+    "compile": "npm run check-types && npm run lint && node esbuild.js",
+    "watch": "npm-run-all -p watch:*",
+    "watch:esbuild": "node esbuild.js --watch",
+    "watch:tsc": "tsc --noEmit --watch --project tsconfig.json",
+    "package": "npm run check-types && npm run lint && node esbuild.js --production",
+    "build:vsix": "npx vsce package --allow-missing-repository",
+    "publish:vsx": "npx ovsx publish",
+    "compile-tests": "tsc -p . --outDir out",
+    "watch-tests": "tsc -p . -w --outDir out",
+    "pretest": "npm run compile-tests && npm run compile && npm run lint",
+    "check-types": "tsc --noEmit",
+    "lint": "eslint src --ext ts",
+    "test": "vscode-test"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.85.0",
+    "@types/mocha": "^10.0.6",
+    "@types/node": "18.x",
+    "@typescript-eslint/eslint-plugin": "^7.1.1",
+    "@typescript-eslint/parser": "^7.1.1",
+    "eslint": "^8.57.0",
+    "esbuild": "^0.20.1",
+    "npm-run-all": "^4.1.5",
+    "typescript": "^5.3.3",
+    "@vscode/test-cli": "^0.0.6",
+    "@vscode/test-electron": "^2.3.9"
+  },
+  "dependencies": {
+    "@vscode/webview-ui-toolkit": "^1.4.0"
+  }
+}
