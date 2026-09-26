@@ -223,10 +223,10 @@ export class SettingsPanel {
         // Local providers are considered 'configured' only if we can verify the service
         // is reachable. For simplicity, we reflect whether a custom URL has been set.
         const localConfigured: Record<string, boolean> = {
-            ollama: config.get<string>('ollama.baseUrl') !== undefined,
-            hermes: config.get<string>('hermes.baseUrl') !== undefined,
-            openclaw: config.get<string>('openclaw.baseUrl') !== undefined,
-            opencode: config.get<string>('opencode.baseUrl') !== undefined,
+            ollama: !!config.inspect('ollama.baseUrl')?.globalValue || !!config.inspect('ollama.baseUrl')?.workspaceValue,
+            hermes: !!config.inspect('hermes.baseUrl')?.globalValue || !!config.inspect('hermes.baseUrl')?.workspaceValue,
+            openclaw: !!config.inspect('openclaw.baseUrl')?.globalValue || !!config.inspect('openclaw.baseUrl')?.workspaceValue,
+            opencode: !!config.inspect('opencode.baseUrl')?.globalValue || !!config.inspect('opencode.baseUrl')?.workspaceValue,
         };
 
         const mcpRaw = McpService.getRawConfig();

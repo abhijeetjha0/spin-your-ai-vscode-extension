@@ -209,18 +209,7 @@ export class HelpPanel {
       </section>
 
       <section class="help-section">
-        <h2>4. Model Context Protocol (MCP) &amp; Agents</h2>
-        <p>Spin Your AI supports agentic behavior via the Model Context Protocol (MCP).</p>
-        <ul>
-          <li><strong>JSON Config:</strong> In Settings, use the <strong>MCP Servers</strong> JSON editor to configure your HTTP/SSE MCP servers (e.g., n8n-mcp).</li>
-          <li><strong>Tool Calling:</strong> When using capable models (OpenAI, Gemini, Anthropic), the model autonomously executes tools from your MCP servers during chat.</li>
-          <li><strong>Toggle:</strong> Use the enable/disable switch on the MCP card in Settings to turn tool calling on or off without losing your config.</li>
-          <li><strong>Supported:</strong> Only HTTP/SSE MCP endpoints are supported. Standard stdio MCP servers are not supported.</li>
-        </ul>
-      </section>
-
-      <section class="help-section">
-        <h2>5. Data Privacy &amp; Security</h2>
+        <h2>4. Data Privacy &amp; Security</h2>
         <p>Your data stays with you. Spin Your AI is a secure, local-first extension.</p>
         <ul>
           <li>All API keys are encrypted and stored in your <strong>OS native keychain</strong> (macOS Keychain, Windows Credential Manager, Linux Secret Service) via VS Code&rsquo;s <code>SecretStorage</code> API.</li>
@@ -231,13 +220,24 @@ export class HelpPanel {
       </section>
 
       <section class="help-section">
-        <h2>6. Troubleshooting</h2>
+        <h2>5. Troubleshooting</h2>
         <ul>
           <li>If a provider shows <strong>No models</strong> in the dropdown, click <strong>Test Connection</strong> in Settings to verify your credentials or endpoint.</li>
           <li>Ensure you have sufficient API credits on your provider&rsquo;s dashboard if cloud calls fail.</li>
           <li>For Ollama, verify the local server is running: <code>ollama serve</code>.</li>
           <li>For MCP servers, verify the JSON config is valid and the server URL is reachable over HTTP.</li>
           <li>Check the VS Code <strong>Output</strong> panel (select <em>Spin Your AI</em> from the dropdown) for detailed error logs.</li>
+        </ul>
+      </section>
+
+      <section class="help-section">
+        <h2>6. Model Context Protocol (MCP) &amp; Agents</h2>
+        <p>Spin Your AI supports agentic behavior via the Model Context Protocol (MCP).</p>
+        <ul>
+          <li><strong>JSON Config:</strong> In Settings, use the <strong>MCP Servers</strong> JSON editor to configure your HTTP/SSE MCP servers (e.g., n8n-mcp).</li>
+          <li><strong>Tool Calling:</strong> When using capable models (OpenAI, Gemini, Anthropic), the model autonomously executes tools from your MCP servers during chat.</li>
+          <li><strong>Toggle:</strong> Use the enable/disable switch on the MCP card in Settings to turn tool calling on or off without losing your config.</li>
+          <li><strong>Supported:</strong> Only HTTP/SSE MCP endpoints are supported. Standard stdio MCP servers are not supported.</li>
         </ul>
       </section>
     </main>

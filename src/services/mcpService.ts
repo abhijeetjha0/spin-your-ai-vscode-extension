@@ -143,16 +143,13 @@ export class McpService {
     }
 
     public static isEnabled(): boolean {
-        const config = vscode.workspace.getConfiguration('spinYourAi');
-        const enabled = config.get<boolean>('mcp.enabled');
-        if (enabled !== undefined) {
-            return enabled;
-        }
+        // mcp.enabled is no longer declared in contributes.configuration, so
+        // vscode.workspace.getConfiguration().get() always returns undefined.
+        // Use globalState as the single source of truth, defaulting to true.
         return this.context?.globalState.get<boolean>('spinYourAi.mcp.enabled', true) ?? true;
     }
 
     public static async setEnabled(enabled: boolean): Promise<void> {
-        await vscode.workspace.getConfiguration('spinYourAi').update('mcp.enabled', enabled, vscode.ConfigurationTarget.Global);
         await this.context?.globalState.update('spinYourAi.mcp.enabled', enabled);
         this.invalidateCache();
     }
@@ -219,7 +216,7 @@ export class McpService {
 
                         if (contentType.includes('text/event-stream')) {
                             const text = await res.text();
-                            const match = text.match(/data:\s*({.*})/);
+                            const match = text.match(/data:\s*({[\s\S]*})/);
                             if (match && match[1]) {
                                 data = JSON.parse(match[1]);
                             } else {
@@ -302,7 +299,7 @@ export class McpService {
 
                         if (contentType.includes('text/event-stream')) {
                             const text = await res.text();
-                            const match = text.match(/data:\s*({.*})/);
+                            const match = text.match(/data:\s*({[\s\S]*})/);
                             if (match && match[1]) {
                                 data = JSON.parse(match[1]);
                             }
@@ -334,6 +331,22 @@ export class McpService {
         this.cachedTools = tools;
         this.cacheTimestamp = now;
         return tools;
+    }
+
+    /**
+     * Returns a human-readable summary of all active MCP tools for injection
+     * into a system prompt. This lets the model answer "list your tools" from
+     * context even when no function call is triggered.
+     */
+    public static async getMcpToolsSummary(): Promise<string> {
+        const tools = await this.getActiveTools();
+        if (tools.length === 0) {
+            return '';
+        }
+        const lines = tools.map(t =>
+            `- **${t.function.name}**: ${t.function.description}`
+        );
+        return `You have access to the following MCP tools:\n${lines.join('\n')}`;
     }
 
     public static async executeTool(toolName: string, args: any): Promise<any> {
@@ -390,7 +403,7 @@ export class McpService {
 
         if (contentType.includes('text/event-stream')) {
             const text = await res.text();
-            const match = text.match(/data:\s*({.*})/);
+            const match = text.match(/data:\s*({[\s\S]*})/);
             if (match && match[1]) {
                 data = JSON.parse(match[1]);
             } else {

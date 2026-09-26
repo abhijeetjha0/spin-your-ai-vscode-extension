@@ -25,7 +25,7 @@ export class OpenRouterProvider extends BaseProvider {
             const response = await HttpService.fetch(`${baseUrl}/models`, {
                 headers: {
                     'Authorization': `Bearer ${apiKey}`,
-                    'HTTP-Referer': 'https://github.com/abhijeetjha0/spin-your-ai-vscode',
+                    'HTTP-Referer': 'https://github.com/abhijeetjha0/spin-your-ai-vscode-extension',
                     'X-Title': 'Spin Your AI VSCode'
                 }
             });
@@ -69,7 +69,7 @@ export class OpenRouterProvider extends BaseProvider {
                 headers: {
                     'Authorization': `Bearer ${apiKey}`,
                     'Content-Type': 'application/json',
-                    'HTTP-Referer': 'https://github.com/abhijeetjha0/spin-your-ai-vscode',
+                    'HTTP-Referer': 'https://github.com/abhijeetjha0/spin-your-ai-vscode-extension',
                     'X-Title': 'Spin Your AI VSCode'
                 },
                 body: JSON.stringify(payload),

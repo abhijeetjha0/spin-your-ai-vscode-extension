@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { ProviderRegistry } from '../providers/providerRegistry';
 import { Logger } from '../utils/logger';
 import { HelpPanel } from './helpPanel';
+import { Message } from '../types';
 
 interface ChatHistoryItem {
     role: 'user' | 'assistant' | 'system';
@@ -238,8 +239,22 @@ export class ChatSidebarViewProvider implements vscode.WebviewViewProvider {
         let fullResponseText = '';
 
         try {
+            const messagesPayload: Message[] = [];
+            const systemMessage = vscode.workspace.getConfiguration().get<string>('spinYourAi.systemMessage');
+            if (systemMessage) {
+                messagesPayload.push({ role: 'system', content: systemMessage });
+            }
+
+            // Include history (excluding the very last item which is the current raw message we just pushed)
+            for (let i = 0; i < this._history.length - 1; i++) {
+                messagesPayload.push({ role: this._history[i].role, content: this._history[i].text });
+            }
+
+            // Append the current message with fully processed text (includes context and attachments)
+            messagesPayload.push({ role: 'user', content: processedText });
+
             const stream = provider.streamChat(
-                [{ role: 'user', content: processedText }],
+                messagesPayload,
                 modelId,
                 this._currentAbortController.signal
             );
