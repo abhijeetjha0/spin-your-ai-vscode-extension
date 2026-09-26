@@ -24,7 +24,7 @@ export class OpenCodeProvider extends BaseProvider {
         }
     }
 
-    async *streamChat(messages: Message[], modelId: string, signal?: AbortSignal): AsyncGenerator<StreamChunk, void, unknown> {
+    async *streamChat(messages: Message[], _modelId: string, signal?: AbortSignal): AsyncGenerator<StreamChunk, void, unknown> {
         const baseUrl = this.getBaseUrl();
         
         let fullPrompt = '';

@@ -2,13 +2,11 @@ import * as vscode from 'vscode';
 import { McpService } from '../services/mcpService';
 import { VaultService } from '../services/vault';
 import { ProviderRegistry } from '../providers/providerRegistry';
-import { Logger } from '../utils/logger';
 import { ConfigService } from '../services/configService';
 
 export class SettingsPanel {
     public static currentPanel: SettingsPanel | undefined;
     private readonly _panel: vscode.WebviewPanel;
-    private readonly _extensionUri: vscode.Uri;
     private _disposables: vscode.Disposable[] = [];
 
     public static createOrShow(extensionUri: vscode.Uri) {
@@ -36,9 +34,8 @@ export class SettingsPanel {
         SettingsPanel.currentPanel = new SettingsPanel(panel, extensionUri);
     }
 
-    private constructor(panel: vscode.WebviewPanel, extensionUri: vscode.Uri) {
+    private constructor(panel: vscode.WebviewPanel, _extensionUri: vscode.Uri) {
         this._panel = panel;
-        this._extensionUri = extensionUri;
 
         this._panel.webview.html = this._getHtmlForWebview(this._panel.webview);
 

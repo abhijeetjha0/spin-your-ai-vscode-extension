@@ -224,7 +224,7 @@ export class McpService {
         this.cacheTimestamp = 0;
         
         // Kill existing STDIO clients so they restart on next request
-        for (const [key, client] of this.stdioClients.entries()) {
+        for (const [_key, client] of this.stdioClients.entries()) {
             try {
                 client.kill();
             } catch (e) {

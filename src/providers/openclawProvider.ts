@@ -24,7 +24,7 @@ export class OpenClawProvider extends BaseProvider {
         }
     }
 
-    async *streamChat(messages: Message[], modelId: string, signal?: AbortSignal): AsyncGenerator<StreamChunk, void, unknown> {
+    async *streamChat(messages: Message[], _modelId: string, signal?: AbortSignal): AsyncGenerator<StreamChunk, void, unknown> {
         const baseUrl = this.getBaseUrl();
         const prompt = messages[messages.length - 1].content;
 
