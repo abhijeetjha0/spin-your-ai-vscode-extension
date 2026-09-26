@@ -62,19 +62,19 @@ export function activate(context: vscode.ExtensionContext) {
 
     // Explain Code command
     const explainCommand = vscode.commands.registerCommand('spin-your-ai.explainCode', () => {
-        sendEditorSelectionToChat(chatProvider, 'Please explain this code:\n');
+        sendEditorSelectionToChat(chatProvider, 'Please provide a detailed explanation of the following code. Break down its logic, purpose, and any notable patterns or potential edge cases:\n', true);
     });
     context.subscriptions.push(explainCommand);
 
     // Refactor Code command
     const refactorCommand = vscode.commands.registerCommand('spin-your-ai.refactorCode', () => {
-        sendEditorSelectionToChat(chatProvider, 'Please refactor this code to improve it:\n');
+        sendEditorSelectionToChat(chatProvider, 'Please refactor the following code to improve its readability, performance, and maintainability. Explain the changes you made and why:\n', true);
     });
     context.subscriptions.push(refactorCommand);
 
     // Fix Bug command
     const fixBugCommand = vscode.commands.registerCommand('spin-your-ai.fixBug', () => {
-        sendEditorSelectionToChat(chatProvider, 'Please find and fix the bugs in this code:\n');
+        sendEditorSelectionToChat(chatProvider, 'Please analyze the following code for any bugs, logical errors, or security vulnerabilities. Provide the corrected code and explain what the issue was:\n', true);
     });
     context.subscriptions.push(fixBugCommand);
 
@@ -162,7 +162,7 @@ async function promptAndStoreKey(providerId: string, title: string) {
     }
 }
 
-function sendEditorSelectionToChat(chatProvider: ChatSidebarViewProvider, prefix: string) {
+function sendEditorSelectionToChat(chatProvider: ChatSidebarViewProvider, prefix: string, autoSend: boolean = false) {
     const editor = vscode.window.activeTextEditor;
     if (!editor) {
         vscode.window.showInformationMessage('Please open a file and select some code first.');
@@ -178,7 +178,7 @@ function sendEditorSelectionToChat(chatProvider: ChatSidebarViewProvider, prefix
     const prompt = `${prefix}\nFile: \`${fileName}\` (${languageId})\n\`\`\`${languageId}\n${code}\n\`\`\``;
     
     vscode.commands.executeCommand('spin-your-ai.chatView.focus');
-    chatProvider.sendExternalPrompt(prompt);
+    chatProvider.sendExternalPrompt(prompt, autoSend);
 }
 
 export function deactivate() {

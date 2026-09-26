@@ -93,12 +93,18 @@ function init() {
     });
 }
 
+let pendingAutoSend = false;
+
 // Handle messages from VS Code extension backend
 window.addEventListener('message', event => {
     const msg = event.data;
     switch (msg.type) {
         case 'setModels':
             loadModels(msg.providers, msg.activeModel);
+            if (pendingAutoSend) {
+                pendingAutoSend = false;
+                sendMessage();
+            }
             break;
         case 'restoreHistory':
             renderHistory(msg.history);
@@ -113,6 +119,13 @@ window.addEventListener('message', event => {
             chatInput.value = msg.text;
             chatInput.focus();
             chatInput.dispatchEvent(new Event('input'));
+            if (msg.autoSend) {
+                if (selectedModelValue) {
+                    sendMessage();
+                } else {
+                    pendingAutoSend = true;
+                }
+            }
             break;
     }
 });
@@ -401,7 +414,13 @@ function handleStreamChunk(chunk, done, error) {
         }
         currentAiText += chunk;
         msgEl.innerHTML = renderMarkdown(currentAiText);
-        chatContainer.scrollTop = chatContainer.scrollHeight;
+        
+        // Smart scroll: only auto-scroll if user is near the bottom
+        const threshold = 150;
+        const isNearBottom = chatContainer.scrollHeight - chatContainer.clientHeight - chatContainer.scrollTop < threshold;
+        if (isNearBottom) {
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
     }
 
     if (done) {

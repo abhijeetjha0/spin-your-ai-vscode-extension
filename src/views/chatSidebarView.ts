@@ -96,10 +96,11 @@ export class ChatSidebarViewProvider implements vscode.WebviewViewProvider {
         }
     }
 
-    public sendExternalPrompt(prompt: string) {
+    public sendExternalPrompt(prompt: string, autoSend: boolean = false) {
         this.sendMessageToWebview({
             type: 'populateInput',
-            text: prompt
+            text: prompt,
+            autoSend
         });
     }
 
