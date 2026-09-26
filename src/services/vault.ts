@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { Logger } from '../utils/logger';
+import { ConfigService } from './configService';
 
 export class VaultService {
     private static secretStorage: vscode.SecretStorage;
@@ -36,12 +37,11 @@ export class VaultService {
             }
 
             // Automatic Migration: check if key was previously set in VS Code settings.json
-            const config = vscode.workspace.getConfiguration('spinYourAi');
-            const legacyKey = config.get<string>(`${providerId}.apiKey`)
-                || config.get<string>(`${providerId}ApiKey`)
-                || config.get<string>(`apiKeys.${providerId}`)
-                || config.get<string>(`${providerId}.key`)
-                || (providerId === 'ollamaCloud' ? config.get<string>('ollama_cloud.apiKey') : undefined);
+            const legacyKey = ConfigService.get<string>(`${providerId}.apiKey`)
+                || ConfigService.get<string>(`${providerId}ApiKey`)
+                || ConfigService.get<string>(`apiKeys.${providerId}`)
+                || ConfigService.get<string>(`${providerId}.key`)
+                || (providerId === 'ollamaCloud' ? ConfigService.get<string>('ollama_cloud.apiKey') : undefined);
 
             if (legacyKey && legacyKey.trim()) {
                 const trimmed = legacyKey.trim();

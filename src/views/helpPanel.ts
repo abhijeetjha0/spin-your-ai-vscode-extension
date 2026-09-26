@@ -237,7 +237,7 @@ export class HelpPanel {
           <li><strong>JSON Config:</strong> In Settings, use the <strong>MCP Servers</strong> JSON editor to configure your HTTP/SSE MCP servers (e.g., n8n-mcp).</li>
           <li><strong>Tool Calling:</strong> When using capable models (OpenAI, Gemini, Anthropic), the model autonomously executes tools from your MCP servers during chat.</li>
           <li><strong>Toggle:</strong> Use the enable/disable switch on the MCP card in Settings to turn tool calling on or off without losing your config.</li>
-          <li><strong>Supported:</strong> Only HTTP/SSE MCP endpoints are supported. Standard stdio MCP servers are not supported.</li>
+          <li><strong>Supported:</strong> Both HTTP/SSE endpoints (via URL) and STDIO servers (via <code>command</code>, e.g. <code>npx</code>) are supported.</li>
         </ul>
       </section>
     </main>

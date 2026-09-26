@@ -34,7 +34,6 @@ export class OllamaProvider extends BaseProvider {
 
     async *streamChat(messages: Message[], modelId: string, signal?: AbortSignal): AsyncGenerator<StreamChunk, void, unknown> {
         const baseUrl = this.getBaseUrl();
-        const tools = await McpService.getActiveTools();
         const currentMessages: any[] = [...messages];
 
         while (true) {
@@ -43,9 +42,6 @@ export class OllamaProvider extends BaseProvider {
                 messages: currentMessages,
                 stream: true
             };
-            if (tools.length > 0) {
-                payload.tools = tools;
-            }
 
             const response = await HttpService.fetch(`${baseUrl}/api/chat`, {
                 method: 'POST',
@@ -62,7 +58,6 @@ export class OllamaProvider extends BaseProvider {
 
             const reader = response.body.getReader();
             const decoder = new TextDecoder();
-            const toolCalls: any[] = [];
             
             try {
                 while (true) {
@@ -81,9 +76,6 @@ export class OllamaProvider extends BaseProvider {
                                     done: false
                                 };
                             }
-                            if (data.message?.tool_calls) {
-                                toolCalls.push(...data.message.tool_calls);
-                            }
                         } catch (e) {
                             // Ignore parse errors for partial chunks
                         }
@@ -91,32 +83,6 @@ export class OllamaProvider extends BaseProvider {
                 }
             } finally {
                 reader.releaseLock();
-            }
-
-            if (toolCalls.length > 0) {
-                currentMessages.push({
-                    role: 'assistant',
-                    content: '',
-                    tool_calls: toolCalls
-                });
-
-                for (const tc of toolCalls) {
-                    const fnName = tc.function?.name;
-                    yield { text: `\n\n> ⚙️ *Executing MCP tool \`${fnName}\`...*\n\n`, done: false };
-
-                    let result: any;
-                    try {
-                        result = await McpService.executeTool(fnName, tc.function?.arguments || {});
-                    } catch (err: any) {
-                        result = `Error: ${err.message}`;
-                    }
-
-                    currentMessages.push({
-                        role: 'tool',
-                        content: typeof result === 'string' ? result : JSON.stringify(result)
-                    });
-                }
-                continue;
             }
 
             break;

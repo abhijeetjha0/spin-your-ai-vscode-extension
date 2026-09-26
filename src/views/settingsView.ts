@@ -3,6 +3,7 @@ import { McpService } from '../services/mcpService';
 import { VaultService } from '../services/vault';
 import { ProviderRegistry } from '../providers/providerRegistry';
 import { Logger } from '../utils/logger';
+import { ConfigService } from '../services/configService';
 
 export class SettingsPanel {
     public static currentPanel: SettingsPanel | undefined;
@@ -143,7 +144,7 @@ export class SettingsPanel {
             case 'SAVE_URL': {
                 const { configKey, url } = message;
                 try {
-                    await vscode.workspace.getConfiguration('spinYourAi').update(configKey, url, vscode.ConfigurationTarget.Global);
+                    await ConfigService.update(configKey, url);
                     this._panel.webview.postMessage({
                         type: 'TOAST',
                         text: `Updated ${configKey}`,
@@ -196,8 +197,6 @@ export class SettingsPanel {
     }
 
     private async _getAllConfigData() {
-        const config = vscode.workspace.getConfiguration('spinYourAi');
-
         const keys: Record<string, boolean> = {
             openai: !!(await VaultService.getKey('openai')),
             anthropic: !!(await VaultService.getKey('anthropic')),
@@ -208,10 +207,10 @@ export class SettingsPanel {
             opencodeZen: !!(await VaultService.getKey('opencodeZen'))
         };
 
-        const ollamaUrl = config.get<string>('ollama.baseUrl') || 'http://localhost:11434';
-        const hermesUrl = config.get<string>('hermes.baseUrl') || 'http://localhost:8642/v1';
-        const openclawUrl = config.get<string>('openclaw.baseUrl') || 'http://localhost:3141';
-        const opencodeUrl = config.get<string>('opencode.baseUrl') || 'http://localhost:3000';
+        const ollamaUrl = ConfigService.get<string>('ollama.baseUrl') || 'http://localhost:11434';
+        const hermesUrl = ConfigService.get<string>('hermes.baseUrl') || 'http://localhost:8642/v1';
+        const openclawUrl = ConfigService.get<string>('openclaw.baseUrl') || 'http://localhost:3141';
+        const opencodeUrl = ConfigService.get<string>('opencode.baseUrl') || 'http://localhost:3000';
 
         const urls = {
             ollama: ollamaUrl,
@@ -223,10 +222,10 @@ export class SettingsPanel {
         // Local providers are considered 'configured' only if we can verify the service
         // is reachable. For simplicity, we reflect whether a custom URL has been set.
         const localConfigured: Record<string, boolean> = {
-            ollama: !!config.inspect('ollama.baseUrl')?.globalValue || !!config.inspect('ollama.baseUrl')?.workspaceValue,
-            hermes: !!config.inspect('hermes.baseUrl')?.globalValue || !!config.inspect('hermes.baseUrl')?.workspaceValue,
-            openclaw: !!config.inspect('openclaw.baseUrl')?.globalValue || !!config.inspect('openclaw.baseUrl')?.workspaceValue,
-            opencode: !!config.inspect('opencode.baseUrl')?.globalValue || !!config.inspect('opencode.baseUrl')?.workspaceValue,
+            ollama: !!ConfigService.get<string>('ollama.baseUrl'),
+            hermes: !!ConfigService.get<string>('hermes.baseUrl'),
+            openclaw: !!ConfigService.get<string>('openclaw.baseUrl'),
+            opencode: !!ConfigService.get<string>('opencode.baseUrl'),
         };
 
         const mcpRaw = McpService.getRawConfig();

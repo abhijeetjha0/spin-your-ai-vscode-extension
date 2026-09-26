@@ -1,6 +1,6 @@
 import { Message, ModelInfo, ProviderConfig, StreamChunk } from '../types';
 import { VaultService } from '../services/vault';
-import * as vscode from 'vscode';
+import { ConfigService } from '../services/configService';
 
 export abstract class BaseProvider {
     constructor(public readonly config: ProviderConfig) {}
@@ -14,7 +14,7 @@ export abstract class BaseProvider {
         if (this.config.type === 'cloud' || this.config.type === 'aggregator') {
             return this.config.baseUrl || '';
         }
-        const customUrl = vscode.workspace.getConfiguration('spinYourAi').get<string>(`${this.config.id}.baseUrl`);
+        const customUrl = ConfigService.get<string>(`${this.config.id}.baseUrl`);
         return customUrl || this.config.baseUrl || '';
     }
 

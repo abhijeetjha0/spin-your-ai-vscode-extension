@@ -5,9 +5,11 @@ import { McpService } from './services/mcpService';
 import { ProviderRegistry } from './providers/providerRegistry';
 import { ChatSidebarViewProvider } from './views/chatSidebarView';
 import { SettingsPanel } from './views/settingsView';
+import { ConfigService } from './services/configService';
 
 export function activate(context: vscode.ExtensionContext) {
     Logger.initialize('Spin Your AI');
+    ConfigService.initialize(context);
     VaultService.initialize(context);
     McpService.initialize(context);
     ProviderRegistry.initialize();
@@ -125,8 +127,7 @@ export function activate(context: vscode.ExtensionContext) {
 }
 
 async function promptAndStoreConfig(configKey: string, title: string, defaultPlaceholder: string) {
-    const config = vscode.workspace.getConfiguration('spinYourAi');
-    const currentValue = config.get<string>(configKey) || defaultPlaceholder;
+    const currentValue = ConfigService.get<string>(configKey) || defaultPlaceholder;
     const newValue = await vscode.window.showInputBox({
         title: `Configure ${title}`,
         prompt: `Enter the URL/endpoint for ${title}`,
@@ -135,7 +136,7 @@ async function promptAndStoreConfig(configKey: string, title: string, defaultPla
     });
     
     if (newValue !== undefined) {
-        await config.update(configKey, newValue.trim(), vscode.ConfigurationTarget.Global);
+        await ConfigService.update(configKey, newValue.trim());
         vscode.window.showInformationMessage(`Successfully updated ${title}!`);
     }
 }

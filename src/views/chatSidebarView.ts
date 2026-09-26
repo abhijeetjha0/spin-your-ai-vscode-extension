@@ -3,6 +3,7 @@ import { ProviderRegistry } from '../providers/providerRegistry';
 import { Logger } from '../utils/logger';
 import { HelpPanel } from './helpPanel';
 import { Message } from '../types';
+import { ConfigService } from '../services/configService';
 
 interface ChatHistoryItem {
     role: 'user' | 'assistant' | 'system';
@@ -240,7 +241,7 @@ export class ChatSidebarViewProvider implements vscode.WebviewViewProvider {
 
         try {
             const messagesPayload: Message[] = [];
-            const systemMessage = vscode.workspace.getConfiguration().get<string>('spinYourAi.systemMessage');
+            const systemMessage = ConfigService.get<string>('systemMessage');
             if (systemMessage) {
                 messagesPayload.push({ role: 'system', content: systemMessage });
             }

@@ -4,7 +4,7 @@ Extend Spin Your AI with Model Context Protocol (MCP) servers and local autonomo
 
 ## Supported Protocols & Agents
 
-- **Model Context Protocol (MCP)**: Connect your AI agent to external tool servers like `n8n-mcp`, databases, and APIs using standard JSON-RPC HTTP/SSE endpoints. Configure them in an editable `mcp_config.json` file.
+- **Model Context Protocol (MCP)**: Connect your AI agent to external tool servers like `n8n-mcp`, databases, and APIs using standard JSON-RPC HTTP/SSE endpoints or local STDIO commands (like `npx`). Configure them in an editable `mcp_config.json` file.
 - **Hermes**: Fast local reasoning and agentic server (default `http://localhost:8642/v1`).
 - **OpenCode**: Code synthesis and execution session agent (default `http://localhost:3000`).
 - **OpenClaw**: Autonomous coding and orchestration agent (default `http://localhost:3141`).

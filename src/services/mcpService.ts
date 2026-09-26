@@ -1,6 +1,8 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
+import * as child_process from 'child_process';
+import * as readline from 'readline';
 import { Logger } from '../utils/logger';
 import { HttpService } from '../utils/http';
 
@@ -50,11 +52,74 @@ const DEFAULT_MCP_CONFIG: McpConfigFile = {
     }
 };
 
+class StdioMcpClient {
+    private process: child_process.ChildProcess;
+    private rl: readline.Interface;
+    private pendingRequests = new Map<number, { resolve: (res: any) => void, reject: (err: Error) => void }>();
+    private requestCounter = 1;
+
+    constructor(command: string, args: string[], env?: Record<string, string>) {
+        const mergedEnv = { ...process.env };
+        if (env) {
+            Object.assign(mergedEnv, env);
+        }
+        this.process = child_process.spawn(command, args, { env: mergedEnv });
+        
+        if (!this.process.stdout) {
+            throw new Error('Failed to capture stdout of the MCP server.');
+        }
+
+        this.rl = readline.createInterface({ input: this.process.stdout });
+        
+        this.rl.on('line', (line) => {
+            try {
+                const data = JSON.parse(line);
+                if (data.id !== undefined && this.pendingRequests.has(data.id)) {
+                    this.pendingRequests.get(data.id)!.resolve(data);
+                    this.pendingRequests.delete(data.id);
+                }
+            } catch (e) {
+                // Ignore parsing errors for general stdout logs
+            }
+        });
+
+        this.process.on('error', (err) => {
+            Logger.error('STDIO MCP Process Error:', err);
+        });
+    }
+
+    public async request(method: string, params?: any, timeout = 15000): Promise<any> {
+        return new Promise((resolve, reject) => {
+            const id = this.requestCounter++;
+            this.pendingRequests.set(id, { resolve, reject });
+            
+            const payload = JSON.stringify({ jsonrpc: '2.0', id, method, params }) + '\n';
+            if (this.process.stdin) {
+                this.process.stdin.write(payload);
+            } else {
+                reject(new Error('Process stdin is not available'));
+            }
+            
+            setTimeout(() => {
+                if (this.pendingRequests.has(id)) {
+                    this.pendingRequests.delete(id);
+                    reject(new Error(`Timeout waiting for stdio response for method ${method}`));
+                }
+            }, timeout);
+        });
+    }
+
+    public kill() {
+        this.process.kill();
+    }
+}
+
 export class McpService {
     private static context: vscode.ExtensionContext;
     private static cachedTools: McpToolDefinition[] | null = null;
     private static cacheTimestamp = 0;
     private static readonly CACHE_TTL_MS = 60000; // 1 minute
+    private static stdioClients = new Map<string, StdioMcpClient>();
 
     public static initialize(context: vscode.ExtensionContext) {
         this.context = context;
@@ -157,6 +222,29 @@ export class McpService {
     public static invalidateCache() {
         this.cachedTools = null;
         this.cacheTimestamp = 0;
+        
+        // Kill existing STDIO clients so they restart on next request
+        for (const [key, client] of this.stdioClients.entries()) {
+            try {
+                client.kill();
+            } catch (e) {
+                // Ignore
+            }
+        }
+        this.stdioClients.clear();
+    }
+    
+    private static getStdioClient(serverKey: string, config: McpServerConfig): StdioMcpClient {
+        if (this.stdioClients.has(serverKey)) {
+            return this.stdioClients.get(serverKey)!;
+        }
+        if (!config.command) {
+            throw new Error(`Missing command for STDIO server ${serverKey}`);
+        }
+        const args = (config as any).args || [];
+        const client = new StdioMcpClient(config.command, args, config.env);
+        this.stdioClients.set(serverKey, client);
+        return client;
     }
 
     public static async testConnection(rawConfig?: string): Promise<McpTestResult> {
@@ -181,39 +269,41 @@ export class McpService {
 
             for (const [key, s] of servers) {
                 const url = s.url || s.serverUrl;
-                if (!url) {
-                    serverStatuses[key] = { status: 'error', error: 'Missing "url" property' };
-                    continue;
-                }
+                const isStdio = s.command && s.command !== 'http' && s.type !== 'http';
 
-                if (s.command && s.command !== 'http' && s.type !== 'http') {
-                    serverStatuses[key] = { status: 'error', error: 'Only HTTP/SSE MCP endpoints are supported' };
+                if (!isStdio && !url) {
+                    serverStatuses[key] = { status: 'error', error: 'Missing "url" property for HTTP server' };
                     continue;
-                }
-
-                const headers: Record<string, string> = {
-                    'Content-Type': 'application/json',
-                    'Accept': 'application/json, text/event-stream'
-                };
-                if (s.env) {
-                    Object.assign(headers, s.env);
-                }
-                if (s.headers) {
-                    Object.assign(headers, s.headers);
                 }
 
                 try {
-                    const res = await HttpService.fetch(url, {
-                        method: 'POST',
-                        headers,
-                        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }),
-                        timeout: 10000
-                    });
+                    let data: any;
 
-                    if (res.ok) {
+                    if (isStdio) {
+                        const client = this.getStdioClient(key, s);
+                        data = await client.request('tools/list');
+                    } else {
+                        const headers: Record<string, string> = {
+                            'Content-Type': 'application/json',
+                            'Accept': 'application/json, text/event-stream'
+                        };
+                        if (s.env) { Object.assign(headers, s.env); }
+                        if (s.headers) { Object.assign(headers, s.headers); }
+
+                        const res = await HttpService.fetch(url!, {
+                            method: 'POST',
+                            headers,
+                            body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }),
+                            timeout: 10000
+                        });
+
+                        if (!res.ok) {
+                            const errText = await res.text();
+                            serverStatuses[key] = { status: 'error', error: `HTTP ${res.status}: ${errText.slice(0, 300)}` };
+                            continue;
+                        }
+
                         const contentType = res.headers.get('content-type') || '';
-                        let data: any;
-
                         if (contentType.includes('text/event-stream')) {
                             const text = await res.text();
                             const match = text.match(/data:\s*({[\s\S]*})/);
@@ -226,17 +316,14 @@ export class McpService {
                         } else {
                             data = await res.json();
                         }
+                    }
 
-                        if (data.error) {
-                            serverStatuses[key] = { status: 'error', error: data.error.message || 'MCP Error' };
-                        } else {
-                            const toolCount = data.result?.tools?.length || 0;
-                            serverStatuses[key] = { status: 'connected', toolCount };
-                            successCount++;
-                        }
+                    if (data.error) {
+                        serverStatuses[key] = { status: 'error', error: data.error.message || 'MCP Error' };
                     } else {
-                        const errText = await res.text();
-                        serverStatuses[key] = { status: 'error', error: `HTTP ${res.status}: ${errText.slice(0, 300)}` };
+                        const toolCount = data.result?.tools?.length || 0;
+                        serverStatuses[key] = { status: 'connected', toolCount };
+                        successCount++;
                     }
                 } catch (e: any) {
                     serverStatuses[key] = { status: 'error', error: e.message || 'Connection failed' };
@@ -275,49 +362,54 @@ export class McpService {
 
             for (const [serverKey, s] of Object.entries(config.mcpServers)) {
                 const url = s.url || s.serverUrl;
-                if (!url) { continue; }
-                if (s.command && s.command !== 'http' && s.type !== 'http') { continue; }
-
-                const headers: Record<string, string> = {
-                    'Content-Type': 'application/json',
-                    'Accept': 'application/json, text/event-stream'
-                };
-                if (s.env) { Object.assign(headers, s.env); }
-                if (s.headers) { Object.assign(headers, s.headers); }
+                const isStdio = s.command && s.command !== 'http' && s.type !== 'http';
+                
+                if (!isStdio && !url) { continue; }
 
                 try {
-                    const res = await HttpService.fetch(url, {
-                        method: 'POST',
-                        headers,
-                        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }),
-                        timeout: 8000
-                    });
+                    let data: any;
+                    if (isStdio) {
+                        const client = this.getStdioClient(serverKey, s);
+                        data = await client.request('tools/list');
+                    } else {
+                        const headers: Record<string, string> = {
+                            'Content-Type': 'application/json',
+                            'Accept': 'application/json, text/event-stream'
+                        };
+                        if (s.env) { Object.assign(headers, s.env); }
+                        if (s.headers) { Object.assign(headers, s.headers); }
 
-                    if (res.ok) {
-                        const contentType = res.headers.get('content-type') || '';
-                        let data: any;
+                        const res = await HttpService.fetch(url!, {
+                            method: 'POST',
+                            headers,
+                            body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }),
+                            timeout: 8000
+                        });
 
-                        if (contentType.includes('text/event-stream')) {
-                            const text = await res.text();
-                            const match = text.match(/data:\s*({[\s\S]*})/);
-                            if (match && match[1]) {
-                                data = JSON.parse(match[1]);
+                        if (res.ok) {
+                            const contentType = res.headers.get('content-type') || '';
+                            if (contentType.includes('text/event-stream')) {
+                                const text = await res.text();
+                                const match = text.match(/data:\s*({[\s\S]*})/);
+                                if (match && match[1]) {
+                                    data = JSON.parse(match[1]);
+                                }
+                            } else {
+                                data = await res.json();
                             }
-                        } else {
-                            data = await res.json();
                         }
+                    }
 
-                        if (data && data.result && Array.isArray(data.result.tools)) {
-                            for (const t of data.result.tools) {
-                                tools.push({
-                                    type: 'function',
-                                    function: {
-                                        name: `mcp_${serverKey}__${t.name}`,
-                                        description: t.description || `Tool provided by MCP server ${serverKey}`,
-                                        parameters: t.inputSchema || { type: 'object', properties: {} }
-                                    }
-                                });
-                            }
+                    if (data && data.result && Array.isArray(data.result.tools)) {
+                        for (const t of data.result.tools) {
+                            tools.push({
+                                type: 'function',
+                                function: {
+                                    name: `mcp_${serverKey}__${t.name}`,
+                                    description: t.description || `Tool provided by MCP server ${serverKey}`,
+                                    parameters: t.inputSchema || { type: 'object', properties: {} }
+                                }
+                            });
                         }
                     }
                 } catch (err: any) {
@@ -367,50 +459,60 @@ export class McpService {
         }
 
         const url = serverConf.url || serverConf.serverUrl;
-        if (!url) {
-            throw new Error(`MCP server "${serverKey}" has no URL configured.`);
+        const isStdio = serverConf.command && serverConf.command !== 'http' && serverConf.type !== 'http';
+        
+        if (!isStdio && !url) {
+            throw new Error(`MCP server "${serverKey}" has no URL configured and is not an STDIO server.`);
         }
 
-        const headers: Record<string, string> = {
-            'Content-Type': 'application/json',
-            'Accept': 'application/json, text/event-stream'
-        };
-        if (serverConf.env) { Object.assign(headers, serverConf.env); }
-        if (serverConf.headers) { Object.assign(headers, serverConf.headers); }
-
-        const res = await HttpService.fetch(url, {
-            method: 'POST',
-            headers,
-            body: JSON.stringify({
-                jsonrpc: '2.0',
-                id: Date.now(),
-                method: 'tools/call',
-                params: {
-                    name: originalToolName,
-                    arguments: args
-                }
-            }),
-            timeout: 60000
-        });
-
-        if (!res.ok) {
-            const errText = await res.text();
-            throw new Error(`HTTP ${res.status} from MCP Server: ${errText}`);
-        }
-
-        const contentType = res.headers.get('content-type') || '';
         let data: any;
 
-        if (contentType.includes('text/event-stream')) {
-            const text = await res.text();
-            const match = text.match(/data:\s*({[\s\S]*})/);
-            if (match && match[1]) {
-                data = JSON.parse(match[1]);
-            } else {
-                throw new Error('Invalid SSE response from MCP server.');
-            }
+        if (isStdio) {
+            const client = this.getStdioClient(serverKey, serverConf);
+            data = await client.request('tools/call', {
+                name: originalToolName,
+                arguments: args
+            }, 60000);
         } else {
-            data = await res.json();
+            const headers: Record<string, string> = {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json, text/event-stream'
+            };
+            if (serverConf.env) { Object.assign(headers, serverConf.env); }
+            if (serverConf.headers) { Object.assign(headers, serverConf.headers); }
+
+            const res = await HttpService.fetch(url!, {
+                method: 'POST',
+                headers,
+                body: JSON.stringify({
+                    jsonrpc: '2.0',
+                    id: Date.now(),
+                    method: 'tools/call',
+                    params: {
+                        name: originalToolName,
+                        arguments: args
+                    }
+                }),
+                timeout: 60000
+            });
+
+            if (!res.ok) {
+                const errText = await res.text();
+                throw new Error(`HTTP ${res.status} from MCP Server: ${errText}`);
+            }
+
+            const contentType = res.headers.get('content-type') || '';
+            if (contentType.includes('text/event-stream')) {
+                const text = await res.text();
+                const match = text.match(/data:\s*({[\s\S]*})/);
+                if (match && match[1]) {
+                    data = JSON.parse(match[1]);
+                } else {
+                    throw new Error('Invalid SSE response from MCP server.');
+                }
+            } else {
+                data = await res.json();
+            }
         }
 
         if (data.error) {
