@@ -14,18 +14,24 @@ export class HermesProvider extends BaseProvider {
     }
 
     async listModels(): Promise<ModelInfo[]> {
-        const baseUrl = this.getBaseUrl();
-        const response = await HttpService.fetch(`${baseUrl}/models`, {
-            headers: { 'Authorization': 'Bearer dummy-key' }
-        });
-        
-        if (!response.ok) { throw new Error(`Hermes not running at ${baseUrl}`); }
-        
-        const data = await response.json() as any;
-        return data.data.map((m: any) => ({
-            id: m.id,
-            name: m.id
-        }));
+        try {
+            const baseUrl = this.getBaseUrl();
+            const response = await HttpService.fetch(`${baseUrl}/models`, {
+                headers: { 'Authorization': 'Bearer dummy-key' }
+            });
+            if (!response.ok) { return []; }
+            
+            const data = await response.json() as any;
+            if (Array.isArray(data.data) && data.data.length > 0) {
+                return data.data.map((m: any) => ({
+                    id: m.id,
+                    name: m.id
+                }));
+            }
+            return [];
+        } catch {
+            return [];
+        }
     }
 
     async *streamChat(messages: Message[], modelId: string, signal?: AbortSignal): AsyncGenerator<StreamChunk, void, unknown> {

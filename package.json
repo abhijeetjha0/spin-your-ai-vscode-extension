@@ -2,7 +2,7 @@
   "name": "spin-your-ai-vscode",
   "displayName": "Spin Your AI",
   "description": "Spin up AI models from your editor, powered by local and cloud AI providers.",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "publisher": "abhijeetjha0",
   "icon": "media/icon-128.png",
   "engines": {
@@ -13,6 +13,7 @@
     "Other"
   ],
   "activationEvents": [
+    "onStartupFinished",
     "onView:spin-your-ai.chatView"
   ],
   "main": "./dist/extension.js",
@@ -23,40 +24,68 @@
         "title": "Spin Your AI: Start"
       },
       {
+        "command": "spin-your-ai.openWalkthrough",
+        "title": "Spin Your AI: Open Walkthrough"
+      },
+      {
+        "command": "spin-your-ai.openSettings",
+        "title": "Spin Your AI: Open Settings"
+      },
+      {
         "command": "spin-your-ai.explainCode",
-        "title": "Spin AI: Explain Code"
+        "title": "Spin Your AI: Explain Code"
       },
       {
         "command": "spin-your-ai.refactorCode",
-        "title": "Spin AI: Refactor Code"
+        "title": "Spin Your AI: Refactor Code"
       },
       {
         "command": "spin-your-ai.fixBug",
-        "title": "Spin AI: Fix Bug"
+        "title": "Spin Your AI: Fix Bug"
       },
       {
         "command": "spin-your-ai.setOpenAiKey",
-        "title": "Spin AI: Set OpenAI Key"
+        "title": "Spin Your AI: Set OpenAI Key"
       },
       {
         "command": "spin-your-ai.setAnthropicKey",
-        "title": "Spin AI: Set Anthropic Key"
+        "title": "Spin Your AI: Set Anthropic Key"
       },
       {
         "command": "spin-your-ai.setGeminiKey",
-        "title": "Spin AI: Set Gemini Key"
+        "title": "Spin Your AI: Set Gemini Key"
       },
       {
         "command": "spin-your-ai.setOpenRouterKey",
-        "title": "Spin AI: Set OpenRouter Key"
+        "title": "Spin Your AI: Set OpenRouter Key"
       },
       {
         "command": "spin-your-ai.setHuggingFaceKey",
-        "title": "Spin AI: Set Hugging Face Key"
+        "title": "Spin Your AI: Set Hugging Face Key"
       },
       {
         "command": "spin-your-ai.setOllamaCloudKey",
-        "title": "Spin AI: Set Ollama Cloud Key"
+        "title": "Spin Your AI: Set Ollama Cloud Key"
+      },
+      {
+        "command": "spin-your-ai.configureOllama",
+        "title": "Spin Your AI: Configure Ollama Endpoint"
+      },
+      {
+        "command": "spin-your-ai.editMcpConfig",
+        "title": "Spin Your AI: Edit MCP Configuration (JSON)"
+      },
+      {
+        "command": "spin-your-ai.configureHermes",
+        "title": "Spin Your AI: Configure Hermes Endpoint"
+      },
+      {
+        "command": "spin-your-ai.configureOpenCode",
+        "title": "Spin Your AI: Configure OpenCode Endpoint"
+      },
+      {
+        "command": "spin-your-ai.configureOpenClaw",
+        "title": "Spin Your AI: Configure OpenClaw Endpoint"
       }
     ],
     "menus": {
@@ -96,10 +125,55 @@
     "configuration": {
       "title": "Spin Your AI",
       "properties": {
-        "spinYourAi.defaultProvider": {
+        "spinYourAi.ollama.baseUrl": {
           "type": "string",
-          "default": "ollama",
-          "description": "Default AI provider to use."
+          "default": "http://localhost:11434",
+          "description": "Base URL for local Ollama instance."
+        },
+        "spinYourAi.mcp.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable or disable Model Context Protocol (MCP) tool integration for AI agents."
+        },
+        "spinYourAi.mcp.config": {
+          "type": "object",
+          "default": {
+            "mcpServers": {
+              "n8n-mcp": {
+                "type": "http",
+                "url": "http://localhost:5678/mcp-server/http",
+                "headers": {
+                  "Authorization": "Bearer YOUR_ACCESS_TOKEN_HERE"
+                }
+              }
+            }
+          },
+          "description": "JSON configuration for Model Context Protocol (MCP) servers providing tools to the AI agent."
+        },
+        "spinYourAi.hermes.baseUrl": {
+          "type": "string",
+          "default": "http://localhost:8642/v1",
+          "description": "Base URL for Hermes agent endpoint."
+        },
+        "spinYourAi.opencode.baseUrl": {
+          "type": "string",
+          "default": "http://localhost:3000",
+          "description": "Base URL for OpenCode server endpoint."
+        },
+        "spinYourAi.openclaw.baseUrl": {
+          "type": "string",
+          "default": "http://localhost:3141",
+          "description": "Base URL for OpenClaw local agent endpoint."
+        },
+        "spinYourAi.huggingface.baseUrl": {
+          "type": "string",
+          "default": "https://api-inference.huggingface.co/v1",
+          "description": "Base URL for Hugging Face inference API."
+        },
+        "spinYourAi.ollamaCloud.baseUrl": {
+          "type": "string",
+          "default": "https://ollama.com/v1",
+          "description": "Base URL for Ollama Cloud API."
         }
       }
     },
@@ -107,12 +181,12 @@
       {
         "id": "spin-your-ai.welcome",
         "title": "Welcome to Spin Your AI",
-        "description": "Set up your AI providers and start spinning!",
+        "description": "Set up your AI providers, local models, MCP servers, and start spinning!",
         "steps": [
           {
             "id": "setup-local",
             "title": "1. Local AI (Ollama)",
-            "description": "Spin Your AI connects to your local Ollama instance on localhost:11434 out of the box. No keys required!",
+            "description": "Spin Your AI connects to your local Ollama instance on localhost:11434 out of the box. No keys required!\n[Configure Ollama Endpoint](command:spin-your-ai.configureOllama)",
             "media": {
               "markdown": "media/walkthrough/local.md"
             }
@@ -123,6 +197,14 @@
             "description": "Want to use GPT-4o, Claude 3.5, or Gemini 1.5? Configure your API keys securely in your OS keychain.\n[Set OpenAI Key](command:spin-your-ai.setOpenAiKey)\n[Set Anthropic Key](command:spin-your-ai.setAnthropicKey)\n[Set Gemini Key](command:spin-your-ai.setGeminiKey)\n[Set OpenRouter Key](command:spin-your-ai.setOpenRouterKey)\n[Set Hugging Face Key](command:spin-your-ai.setHuggingFaceKey)\n[Set Ollama Cloud Key](command:spin-your-ai.setOllamaCloudKey)",
             "media": {
               "markdown": "media/walkthrough/cloud.md"
+            }
+          },
+          {
+            "id": "setup-mcp",
+            "title": "3. MCP & Local Agents",
+            "description": "Connect to Model Context Protocol (MCP) tool servers (like n8n-mcp) and autonomous agents like Hermes, OpenCode, and OpenClaw.\n[Edit MCP Configuration](command:spin-your-ai.editMcpConfig)\n[Open Settings](command:spin-your-ai.openSettings)\n[Configure Hermes Endpoint](command:spin-your-ai.configureHermes)\n[Configure OpenCode Endpoint](command:spin-your-ai.configureOpenCode)\n[Configure OpenClaw Endpoint](command:spin-your-ai.configureOpenClaw)",
+            "media": {
+              "markdown": "media/walkthrough/mcp.md"
             }
           }
         ]

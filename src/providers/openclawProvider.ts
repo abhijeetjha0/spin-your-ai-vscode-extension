@@ -14,12 +14,14 @@ export class OpenClawProvider extends BaseProvider {
     }
 
     async listModels(): Promise<ModelInfo[]> {
-        const baseUrl = this.getBaseUrl();
-        const response = await HttpService.fetch(`${baseUrl}/health`);
-        
-        if (!response.ok) { throw new Error(`OpenClaw not running at ${baseUrl}`); }
-        
-        return [{ id: 'agent', name: 'OpenClaw Agent' }];
+        try {
+            const baseUrl = this.getBaseUrl();
+            const response = await HttpService.fetch(`${baseUrl}/health`);
+            if (!response.ok) { return []; }
+            return [{ id: 'agent', name: 'OpenClaw Agent' }];
+        } catch {
+            return [];
+        }
     }
 
     async *streamChat(messages: Message[], modelId: string, signal?: AbortSignal): AsyncGenerator<StreamChunk, void, unknown> {

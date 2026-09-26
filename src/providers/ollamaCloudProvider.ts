@@ -15,20 +15,26 @@ export class OllamaCloudProvider extends BaseProvider {
 
     async listModels(): Promise<ModelInfo[]> {
         const apiKey = await this.getApiKey();
-        if (!apiKey) { throw new Error('Ollama Cloud API key not found'); }
+        if (!apiKey) { return []; }
 
-        const baseUrl = this.getBaseUrl();
-        const response = await HttpService.fetch(`${baseUrl}/models`, {
-            headers: { 'Authorization': `Bearer ${apiKey}` }
-        });
-        
-        if (!response.ok) { throw new Error(`Ollama Cloud error: ${response.statusText}`); }
-        
-        const data = await response.json() as any;
-        return data.data.map((m: any) => ({
-            id: m.id,
-            name: m.id
-        }));
+        try {
+            const baseUrl = this.getBaseUrl();
+            const response = await HttpService.fetch(`${baseUrl}/models`, {
+                headers: { 'Authorization': `Bearer ${apiKey}` }
+            });
+            if (!response.ok) { return []; }
+            
+            const data = await response.json() as any;
+            if (Array.isArray(data.data) && data.data.length > 0) {
+                return data.data.map((m: any) => ({
+                    id: m.id,
+                    name: m.id
+                }));
+            }
+            return [];
+        } catch {
+            return [];
+        }
     }
 
     async *streamChat(messages: Message[], modelId: string, signal?: AbortSignal): AsyncGenerator<StreamChunk, void, unknown> {

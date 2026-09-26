@@ -15,6 +15,12 @@ export class Logger {
         }
     }
 
+    public static warn(message: string) {
+        if (this.channel) {
+            this.channel.appendLine(`[WARN ${new Date().toISOString()}] ${message}`);
+        }
+    }
+
     public static error(message: string, error?: any) {
         if (this.channel) {
             const errorMsg = error ? ` - ${error instanceof Error ? error.message : JSON.stringify(error)}` : '';

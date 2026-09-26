@@ -15,16 +15,25 @@ export class HuggingFaceProvider extends BaseProvider {
 
     async listModels(): Promise<ModelInfo[]> {
         const apiKey = await this.getApiKey();
-        if (!apiKey) { throw new Error('Hugging Face API key not found'); }
+        if (!apiKey) { return []; }
 
-        const response = await HttpService.fetch(`https://huggingface.co/api/models?pipeline_tag=text-generation&sort=downloads&direction=-1&limit=20`);
-        if (!response.ok) { throw new Error(`Hugging Face error: ${response.statusText}`); }
-        
-        const data = await response.json() as any[];
-        return data.map((m: any) => ({
-            id: m.id,
-            name: m.id
-        }));
+        try {
+            const response = await HttpService.fetch(`https://huggingface.co/api/models?pipeline_tag=text-generation&sort=downloads&direction=-1&limit=20`, {
+                headers: { 'Authorization': `Bearer ${apiKey}` }
+            });
+            if (!response.ok) { return []; }
+            
+            const data = await response.json() as any[];
+            if (Array.isArray(data) && data.length > 0) {
+                return data.map((m: any) => ({
+                    id: m.id,
+                    name: m.id
+                }));
+            }
+            return [];
+        } catch {
+            return [];
+        }
     }
 
     async *streamChat(messages: Message[], modelId: string, signal?: AbortSignal): AsyncGenerator<StreamChunk, void, unknown> {

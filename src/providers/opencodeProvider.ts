@@ -14,12 +14,14 @@ export class OpenCodeProvider extends BaseProvider {
     }
 
     async listModels(): Promise<ModelInfo[]> {
-        const baseUrl = this.getBaseUrl();
-        const response = await HttpService.fetch(`${baseUrl}/api/health`);
-        
-        if (!response.ok) { throw new Error(`OpenCode not running at ${baseUrl}`); }
-        
-        return [{ id: 'opencode-default', name: 'OpenCode Session' }];
+        try {
+            const baseUrl = this.getBaseUrl();
+            const response = await HttpService.fetch(`${baseUrl}/api/health`);
+            if (!response.ok) { return []; }
+            return [{ id: 'opencode-default', name: 'OpenCode Session' }];
+        } catch {
+            return [];
+        }
     }
 
     async *streamChat(messages: Message[], modelId: string, signal?: AbortSignal): AsyncGenerator<StreamChunk, void, unknown> {

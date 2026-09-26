@@ -4,7 +4,6 @@ import { OpenAIProvider } from './openaiProvider';
 import { AnthropicProvider } from './anthropicProvider';
 import { GeminiProvider } from './geminiProvider';
 import { OpenRouterProvider } from './openrouterProvider';
-import { MCPProvider } from './mcpProvider';
 import { HuggingFaceProvider } from './huggingfaceProvider';
 import { OllamaCloudProvider } from './ollamaCloudProvider';
 import { OpenCodeProvider } from './opencodeProvider';
@@ -21,7 +20,6 @@ export class ProviderRegistry {
         this.register(new AnthropicProvider());
         this.register(new GeminiProvider());
         this.register(new OpenRouterProvider());
-        this.register(new MCPProvider());
         this.register(new HuggingFaceProvider());
         this.register(new OllamaCloudProvider());
         this.register(new OpenCodeProvider());
