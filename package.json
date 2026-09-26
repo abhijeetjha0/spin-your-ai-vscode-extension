@@ -13,8 +13,7 @@
     "Other"
   ],
   "activationEvents": [
-    "onStartupFinished",
-    "onView:spin-your-ai.chatView"
+    "onStartupFinished"
   ],
   "main": "./dist/extension.js",
   "contributes": {
