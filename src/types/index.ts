@@ -16,6 +16,7 @@ export interface ProviderConfig {
     type: 'local' | 'cloud' | 'aggregator' | 'platform' | 'mcp';
     baseUrl?: string;
     apiKeyRequired: boolean;
+    supportsTools?: boolean;
 }
 
 export interface StreamChunk {

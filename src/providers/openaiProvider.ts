@@ -59,7 +59,7 @@ export class OpenAIProvider extends BaseProvider {
                 stream: true
             };
 
-            if (tools.length > 0) {
+            if (this.config.supportsTools !== false && tools.length > 0) {
                 payload.tools = tools;
             }
 

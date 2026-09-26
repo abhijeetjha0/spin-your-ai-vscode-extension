@@ -91,15 +91,15 @@
       "editor/context": [
         {
           "command": "spin-your-ai.explainCode",
-          "group": "spin-ai@1"
+          "group": "spin-your-ai@1"
         },
         {
           "command": "spin-your-ai.refactorCode",
-          "group": "spin-ai@2"
+          "group": "spin-your-ai@2"
         },
         {
           "command": "spin-your-ai.fixBug",
-          "group": "spin-ai@3"
+          "group": "spin-your-ai@3"
         }
       ]
     },

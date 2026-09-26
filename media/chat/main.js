@@ -6,6 +6,8 @@ const sendBtn = document.getElementById('send-btn');
 const stopBtn = document.getElementById('stop-btn');
 const optionsBtn = document.getElementById('options-btn');
 const helpBtn = document.getElementById('help-btn');
+const exportChatBtn = document.getElementById('export-chat-btn');
+const reloadModelsBtn = document.getElementById('reload-models-btn');
 const newChatBtn = document.getElementById('new-chat-btn');
 const contextToggle = document.getElementById('include-page-context');
 const attachBtn = document.getElementById('attach-btn');
@@ -25,6 +27,14 @@ let currentMessageId = null;
 let currentAiText = '';
 let pendingAttachments = [];
 
+const sessionsBtn = document.getElementById('sessions-btn');
+const sessionsModal = document.getElementById('sessions-modal');
+const closeSessionsBtn = document.getElementById('close-sessions-btn');
+const sessionsList = document.getElementById('sessions-list');
+
+let allSessions = [];
+let currentSessionId = null;
+
 // Combobox state
 let allModels = [];         // [{providerId, providerName, modelId, modelName, value}]
 let selectedModelValue = null; // 'providerId::modelId'
@@ -41,6 +51,21 @@ function init() {
 
     helpBtn?.addEventListener('click', () => {
         vscode.postMessage({ type: 'openHelp' });
+    });
+
+    exportChatBtn?.addEventListener('click', () => {
+        vscode.postMessage({ type: 'exportChat' });
+    });
+
+    reloadModelsBtn?.addEventListener('click', () => {
+        vscode.postMessage({ type: 'getModels' });
+        
+        // Visual feedback
+        const icon = reloadModelsBtn.querySelector('.material-symbols-outlined');
+        if (icon) {
+            icon.style.animation = 'spin 1s linear infinite';
+            setTimeout(() => icon.style.animation = '', 1000);
+        }
     });
 
     newChatBtn?.addEventListener('click', clearChat);
@@ -66,7 +91,8 @@ function init() {
     stopBtn.addEventListener('click', () => {
         if (isGenerating) {
             vscode.postMessage({ type: 'stopGeneration' });
-            finishGeneration();
+            // Do not call finishGeneration() here. 
+            // We wait for the backend to abort the request and send back { done: true }
         }
     });
 
@@ -89,7 +115,22 @@ function init() {
     });
 
     document.addEventListener('click', (e) => {
-        if (!modelCombobox.contains(e.target)) closeDropdown();
+        if (modelCombobox && !modelCombobox.contains(e.target)) closeDropdown();
+    });
+
+    sessionsBtn?.addEventListener('click', () => {
+        sessionsModal.classList.remove('hidden');
+        renderSessionsList();
+    });
+    
+    closeSessionsBtn?.addEventListener('click', () => {
+        sessionsModal.classList.add('hidden');
+    });
+    
+    sessionsModal?.addEventListener('click', (e) => {
+        if (e.target === sessionsModal) {
+            sessionsModal.classList.add('hidden');
+        }
     });
 }
 
@@ -107,7 +148,17 @@ window.addEventListener('message', event => {
             }
             break;
         case 'restoreHistory':
+            if (msg.sessions) {
+                allSessions = msg.sessions;
+                currentSessionId = msg.currentSessionId;
+                renderSessionsList();
+            }
             renderHistory(msg.history);
+            break;
+        case 'updateSessions':
+            allSessions = msg.sessions || [];
+            currentSessionId = msg.currentSessionId;
+            renderSessionsList();
             break;
         case 'streamChunk':
             handleStreamChunk(msg.text, msg.done, msg.error);
@@ -668,6 +719,53 @@ function processInline(text) {
     text = text.replace(/`([^`]+)`/g, '<code>$1</code>');
     text = text.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
     return text;
+}
+
+function renderSessionsList() {
+    if (!sessionsList) return;
+    sessionsList.innerHTML = '';
+    if (allSessions.length === 0) {
+        sessionsList.innerHTML = '<div style="padding: 10px; color: var(--text-muted);">No sessions yet</div>';
+        return;
+    }
+    
+    // Sort by createdAt desc
+    const sorted = [...allSessions].sort((a, b) => b.createdAt - a.createdAt);
+    
+    sorted.forEach(session => {
+        const item = document.createElement('div');
+        item.className = 'model-item' + (session.id === currentSessionId ? ' selected' : '');
+        item.style = 'display: flex; justify-content: space-between; align-items: center;';
+        
+        const titleSpan = document.createElement('span');
+        titleSpan.textContent = session.title || 'Chat Session';
+        titleSpan.style = 'flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-right: 10px;';
+        
+        item.appendChild(titleSpan);
+        
+        const deleteBtn = document.createElement('span');
+        deleteBtn.className = 'material-symbols-outlined';
+        deleteBtn.textContent = 'delete';
+        deleteBtn.style = 'font-size: 16px; cursor: pointer; color: var(--text-muted); padding: 2px; border-radius: 4px;';
+        deleteBtn.title = 'Delete Session';
+        
+        deleteBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            vscode.postMessage({ type: 'deleteSession', sessionId: session.id });
+        });
+        
+        deleteBtn.addEventListener('mouseenter', () => deleteBtn.style.background = 'rgba(255, 0, 0, 0.2)');
+        deleteBtn.addEventListener('mouseleave', () => deleteBtn.style.background = 'transparent');
+        
+        item.appendChild(deleteBtn);
+        
+        item.addEventListener('click', () => {
+            vscode.postMessage({ type: 'switchSession', sessionId: session.id });
+            sessionsModal.classList.add('hidden');
+        });
+        
+        sessionsList.appendChild(item);
+    });
 }
 
 document.addEventListener('DOMContentLoaded', init);

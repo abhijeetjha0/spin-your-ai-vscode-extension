@@ -10,7 +10,8 @@ export class OllamaProvider extends OpenAIProvider {
             name: 'Ollama',
             type: 'local',
             baseUrl: 'http://localhost:11434/v1',
-            apiKeyRequired: false
+            apiKeyRequired: false,
+            supportsTools: false
         };
     }
 

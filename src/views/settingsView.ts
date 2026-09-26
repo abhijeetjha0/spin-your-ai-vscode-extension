@@ -879,6 +879,7 @@ export class SettingsPanel {
             </div>
 
             <div class="actions">
+              <button type="button" class="btn btn-secondary" id="mcp-reload-btn" title="Reload config from disk">Reload Config</button>
               <button type="button" class="btn btn-secondary" id="mcp-open-editor" title="Open mcp_config.json in VS Code editor tab">Open in Editor</button>
               <button type="button" class="btn btn-danger" id="mcp-reset-btn">Reset</button>
               <button type="button" class="btn btn-secondary" id="mcp-test-btn">Test Connection</button>
@@ -1069,6 +1070,11 @@ export class SettingsPanel {
 
     document.getElementById('mcp-open-editor').addEventListener('click', () => {
       vscode.postMessage({ type: 'OPEN_MCP_IN_EDITOR' });
+    });
+
+    document.getElementById('mcp-reload-btn').addEventListener('click', () => {
+      vscode.postMessage({ type: 'GET_INIT_DATA' });
+      vscode.postMessage({ type: 'TOAST', text: 'Reloaded configurations from disk', variant: 'success' });
     });
 
     function renderMcpTestResult(res) {

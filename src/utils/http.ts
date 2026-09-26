@@ -11,6 +11,12 @@ export class HttpService {
         const controller = new AbortController();
         const id = setTimeout(() => controller.abort(), timeout);
 
+        if (fetchOptions.signal) {
+            fetchOptions.signal.addEventListener('abort', () => {
+                controller.abort();
+            });
+        }
+
         try {
             const response = await fetch(url, {
                 ...fetchOptions,

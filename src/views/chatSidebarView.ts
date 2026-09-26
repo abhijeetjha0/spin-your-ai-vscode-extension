@@ -4,6 +4,7 @@ import { Logger } from '../utils/logger';
 import { HelpPanel } from './helpPanel';
 import { Message } from '../types';
 import { ConfigService } from '../services/configService';
+import { McpService } from '../services/mcpService';
 
 interface ChatHistoryItem {
     role: 'user' | 'assistant' | 'system';
@@ -11,10 +12,18 @@ interface ChatHistoryItem {
     attachments?: Array<{ name: string; type: string; data: string }>;
 }
 
+interface ChatSession {
+    id: string;
+    title: string;
+    createdAt: number;
+    history: ChatHistoryItem[];
+}
+
 export class ChatSidebarViewProvider implements vscode.WebviewViewProvider {
     public static readonly viewType = 'spin-your-ai.chatView';
     private _view?: vscode.WebviewView;
-    private _history: ChatHistoryItem[] = [];
+    private _sessions: ChatSession[] = [];
+    private _currentSessionId: string | null = null;
     private _currentAbortController?: AbortController;
 
     constructor(
@@ -22,7 +31,23 @@ export class ChatSidebarViewProvider implements vscode.WebviewViewProvider {
         private readonly _context?: vscode.ExtensionContext
     ) {
         if (this._context) {
-            this._history = this._context.workspaceState.get<ChatHistoryItem[]>('spinYourAi.chatHistory') || [];
+            this._sessions = this._context.workspaceState.get<ChatSession[]>('spinYourAi.chatSessions') || [];
+            this._currentSessionId = this._context.workspaceState.get<string>('spinYourAi.currentSessionId') || null;
+            
+            if (this._sessions.length === 0) {
+                const oldHistory = this._context.workspaceState.get<ChatHistoryItem[]>('spinYourAi.chatHistory');
+                if (oldHistory && oldHistory.length > 0) {
+                    const id = Date.now().toString();
+                    this._sessions.push({
+                        id,
+                        title: 'Previous Chat',
+                        createdAt: Date.now(),
+                        history: oldHistory
+                    });
+                    this._currentSessionId = id;
+                    this.saveHistory();
+                }
+            }
         }
     }
 
@@ -83,8 +108,16 @@ export class ChatSidebarViewProvider implements vscode.WebviewViewProvider {
                 case 'stopGeneration':
                     if (this._currentAbortController) {
                         this._currentAbortController.abort();
-                        this._currentAbortController = undefined;
                     }
+                    break;
+                case 'exportChat':
+                    await this.exportChat();
+                    break;
+                case 'switchSession':
+                    this.switchSession(data.sessionId);
+                    break;
+                case 'deleteSession':
+                    await this.deleteSession(data.sessionId);
                     break;
             }
         });
@@ -104,33 +137,59 @@ export class ChatSidebarViewProvider implements vscode.WebviewViewProvider {
         });
     }
 
+    private get currentHistory(): ChatHistoryItem[] {
+        if (!this._currentSessionId) return [];
+        const session = this._sessions.find(s => s.id === this._currentSessionId);
+        return session ? session.history : [];
+    }
+
     private restoreHistory() {
         if (!this._view) { return; }
         this._view.webview.postMessage({
             type: 'restoreHistory',
-            history: this._history
+            history: this.currentHistory,
+            sessions: this._sessions,
+            currentSessionId: this._currentSessionId
         });
     }
 
     private clearHistory() {
-        this._history = [];
-        if (this._context) {
-            this._context.workspaceState.update('spinYourAi.chatHistory', []);
-        }
+        this._currentSessionId = null;
         if (this._currentAbortController) {
             this._currentAbortController.abort();
             this._currentAbortController = undefined;
         }
+        this.saveHistory();
+        this.restoreHistory();
+    }
+
+    private switchSession(sessionId: string) {
+        if (this._sessions.find(s => s.id === sessionId)) {
+            this._currentSessionId = sessionId;
+            this.saveHistory();
+            this.restoreHistory();
+        }
+    }
+
+    private async deleteSession(sessionId: string) {
+        this._sessions = this._sessions.filter(s => s.id !== sessionId);
+        if (this._currentSessionId === sessionId) {
+            this._currentSessionId = this._sessions.length > 0 ? this._sessions[0].id : null;
+        }
+        await this.saveHistory();
+        this.restoreHistory();
     }
 
     private async saveHistory() {
         if (this._context) {
-            await this._context.workspaceState.update('spinYourAi.chatHistory', this._history);
+            await this._context.workspaceState.update('spinYourAi.chatSessions', this._sessions);
+            await this._context.workspaceState.update('spinYourAi.currentSessionId', this._currentSessionId);
         }
     }
 
     private async sendModels() {
         if (!this._view) { return; }
+        McpService.invalidateCache();
         const providers = ProviderRegistry.getAllProviders();
         const providersMap: Record<string, { name: string; models: any[] }> = {};
 
@@ -232,8 +291,26 @@ export class ChatSidebarViewProvider implements vscode.WebviewViewProvider {
             return;
         }
 
+        if (!this._currentSessionId) {
+            this._currentSessionId = Date.now().toString();
+            const title = text.trim();
+            this._sessions.push({
+                id: this._currentSessionId,
+                title: title.length > 25 ? title.substring(0, 25) + '...' : title,
+                createdAt: Date.now(),
+                history: []
+            });
+            this._view?.webview.postMessage({
+                type: 'updateSessions',
+                sessions: this._sessions,
+                currentSessionId: this._currentSessionId
+            });
+        }
+
+        const history = this.currentHistory;
+        
         // Save user message to persistent history
-        this._history.push({
+        history.push({
             role: 'user',
             text: text,
             attachments: attachments
@@ -251,8 +328,8 @@ export class ChatSidebarViewProvider implements vscode.WebviewViewProvider {
             }
 
             // Include history (excluding the very last item which is the current raw message we just pushed)
-            for (let i = 0; i < this._history.length - 1; i++) {
-                messagesPayload.push({ role: this._history[i].role, content: this._history[i].text });
+            for (let i = 0; i < history.length - 1; i++) {
+                messagesPayload.push({ role: history[i].role, content: history[i].text });
             }
 
             // Append the current message with fully processed text (includes context and attachments)
@@ -275,21 +352,64 @@ export class ChatSidebarViewProvider implements vscode.WebviewViewProvider {
 
             // Save assistant message to persistent history
             if (fullResponseText) {
-                this._history.push({
-                    role: 'assistant',
-                    text: fullResponseText
-                });
-                await this.saveHistory();
+                const session = this._sessions.find(s => s.id === this._currentSessionId);
+                if (session) {
+                    session.history.push({
+                        role: 'assistant',
+                        text: fullResponseText
+                    });
+                    await this.saveHistory();
+                }
             }
         } catch (error: any) {
-            if (this._currentAbortController?.signal.aborted) {
-                this._view.webview.postMessage({ type: 'streamChunk', text: '', done: true });
-            } else {
+            if (!this._currentAbortController?.signal.aborted) {
                 Logger.error('Chat error', error);
                 this._view.webview.postMessage({ type: 'error', message: error.message });
             }
         } finally {
+            if (this._currentAbortController?.signal.aborted) {
+                this._view.webview.postMessage({ type: 'streamChunk', text: '\n\n**[Aborted by user]**', done: true });
+            } else {
+                this._view.webview.postMessage({ type: 'streamChunk', text: '', done: true });
+            }
             this._currentAbortController = undefined;
+        }
+    }
+
+    private async exportChat() {
+        const history = this.currentHistory;
+        if (history.length === 0) {
+            vscode.window.showWarningMessage('No chat history to export.');
+            return;
+        }
+
+        const messages = history.map(item => ({
+            role: item.role,
+            content: item.text
+        }));
+
+        const exportData = {
+            metadata: {
+                format: 'openai_messages',
+                version: '1.0',
+                exported_at: new Date().toISOString(),
+                source: 'spin-your-ai-vscode',
+                message_count: messages.length
+            },
+            messages
+        };
+
+        const json = JSON.stringify(exportData, null, 2);
+
+        const uri = await vscode.window.showSaveDialog({
+            defaultUri: vscode.Uri.file(`chat_export_${Date.now()}.json`),
+            filters: { 'JSON': ['json'] },
+            title: 'Export Chat as AI Memory'
+        });
+
+        if (uri) {
+            await vscode.workspace.fs.writeFile(uri, Buffer.from(json, 'utf8'));
+            vscode.window.showInformationMessage(`Chat exported to ${uri.fsPath}`);
         }
     }
 
@@ -310,6 +430,9 @@ export class ChatSidebarViewProvider implements vscode.WebviewViewProvider {
             <body>
                 <div class="app-container">
                     <header class="header glassmorphism">
+                        <div class="header-left" style="margin-right: 12px; display: flex; align-items: center;">
+                            <button id="sessions-btn" class="icon-btn" title="Chat History"><span class="material-symbols-outlined">history</span></button>
+                        </div>
                         <div class="model-combobox" id="model-combobox">
                             <div class="model-combobox-trigger" id="model-trigger">
                                 <span class="material-symbols-outlined combobox-icon">smart_toy</span>
@@ -325,7 +448,9 @@ export class ChatSidebarViewProvider implements vscode.WebviewViewProvider {
                             </div>
                         </div>
                         <div class="header-actions">
-                            <button id="new-chat-btn" class="icon-btn" title="New Chat"><span class="material-symbols-outlined">delete</span></button>
+                            <button id="reload-models-btn" class="icon-btn" title="Reload Models"><span class="material-symbols-outlined">refresh</span></button>
+                            <button id="export-chat-btn" class="icon-btn" title="Export Chat"><span class="material-symbols-outlined">download</span></button>
+                            <button id="new-chat-btn" class="icon-btn" title="New Chat"><span class="material-symbols-outlined">add</span></button>
                             <button id="help-btn" class="icon-btn" title="Help"><span class="material-symbols-outlined">help</span></button>
                             <button id="options-btn" class="icon-btn" title="Settings"><span class="material-symbols-outlined">settings</span></button>
                         </div>
@@ -361,6 +486,17 @@ export class ChatSidebarViewProvider implements vscode.WebviewViewProvider {
                         </div>
                     </footer>
                 </div>
+                
+                <div id="sessions-modal" class="modal hidden">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h2 style="font-size: 16px; color: var(--text-main);">Chat History</h2>
+                            <button id="close-sessions-btn" class="icon-btn"><span class="material-symbols-outlined">close</span></button>
+                        </div>
+                        <div id="sessions-list" class="modal-body sessions-list" style="max-height: 400px; overflow-y: auto;"></div>
+                    </div>
+                </div>
+                
                 <script src="${scriptUri}"></script>
             </body>
             </html>`;
