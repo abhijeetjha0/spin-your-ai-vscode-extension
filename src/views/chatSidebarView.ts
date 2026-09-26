@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { ProviderRegistry } from '../providers/providerRegistry';
 import { Logger } from '../utils/logger';
+import { HelpPanel } from './helpPanel';
 
 interface ChatHistoryItem {
     role: 'user' | 'assistant' | 'system';
@@ -75,9 +76,7 @@ export class ChatSidebarViewProvider implements vscode.WebviewViewProvider {
                     vscode.commands.executeCommand('spin-your-ai.openSettings');
                     break;
                 case 'openHelp':
-                    if (this._context?.extension) {
-                        vscode.commands.executeCommand('workbench.action.openWalkthrough', `${this._context.extension.id}#spin-your-ai.welcome`, false);
-                    }
+                    HelpPanel.createOrShow(this._extensionUri);
                     break;
                 case 'stopGeneration':
                     if (this._currentAbortController) {

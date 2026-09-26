@@ -208,17 +208,31 @@ export class SettingsPanel {
             opencodeZen: !!(await VaultService.getKey('opencodeZen'))
         };
 
+        const ollamaUrl = config.get<string>('ollama.baseUrl') || 'http://localhost:11434';
+        const hermesUrl = config.get<string>('hermes.baseUrl') || 'http://localhost:8642/v1';
+        const openclawUrl = config.get<string>('openclaw.baseUrl') || 'http://localhost:3141';
+        const opencodeUrl = config.get<string>('opencode.baseUrl') || 'http://localhost:3000';
+
         const urls = {
-            ollama: config.get<string>('ollama.baseUrl') || 'http://localhost:11434',
-            hermes: config.get<string>('hermes.baseUrl') || 'http://localhost:8642/v1',
-            openclaw: config.get<string>('openclaw.baseUrl') || 'http://localhost:3141',
-            opencode: config.get<string>('opencode.baseUrl') || 'http://localhost:3000'
+            ollama: ollamaUrl,
+            hermes: hermesUrl,
+            openclaw: openclawUrl,
+            opencode: opencodeUrl
+        };
+
+        // Local providers are considered 'configured' only if we can verify the service
+        // is reachable. For simplicity, we reflect whether a custom URL has been set.
+        const localConfigured: Record<string, boolean> = {
+            ollama: config.get<string>('ollama.baseUrl') !== undefined,
+            hermes: config.get<string>('hermes.baseUrl') !== undefined,
+            openclaw: config.get<string>('openclaw.baseUrl') !== undefined,
+            opencode: config.get<string>('opencode.baseUrl') !== undefined,
         };
 
         const mcpRaw = McpService.getRawConfig();
         const mcpEnabled = McpService.isEnabled();
 
-        return { keys, urls, mcpRaw, mcpEnabled };
+        return { keys, urls, localConfigured, mcpRaw, mcpEnabled };
     }
 
     public dispose() {
@@ -556,7 +570,7 @@ export class SettingsPanel {
         <a href="#local" class="nav-link">Local Agents & Models</a>
         <a href="#cloud" class="nav-link">Cloud APIs</a>
         <a href="#aggregators" class="nav-link">Aggregators</a>
-        <a href="#dev" class="nav-link">Dev Platforms</a>
+        <a href="#mcp" class="nav-link">MCP Servers</a>
       </nav>
     </aside>
 
@@ -570,49 +584,58 @@ export class SettingsPanel {
 
       <div class="content-inner">
 
-        <!-- DEV PLATFORMS: MCP SERVERS (Top priority for user) -->
-        <div class="category-section" id="dev">
-          <h3>Dev Platforms</h3>
+        <!-- LOCAL AGENTS & MODELS -->
+        <div class="category-section" id="local">
+          <h3>Local Agents &amp; Models</h3>
 
-          <!-- MCP SERVERS CARD MATCHING SCREENSHOT 2 -->
-          <div class="provider-card" id="card-mcp">
+          <!-- Ollama -->
+          <div class="provider-card" id="card-ollama">
             <div class="provider-header">
-              <div class="provider-name">
-                MCP Servers 
-                <span class="provider-status" id="mcp-status-badge">Not Configured</span>
-              </div>
-              <label class="toggle-switch" title="Enable/Disable MCP tool calling for the agent">
-                <input type="checkbox" id="mcp-toggle" checked>
-                <span class="slider"></span>
-              </label>
+              <div class="provider-name">Ollama (Local) <span class="provider-status" id="ollama-status-badge">Not Configured</span></div>
             </div>
-
-            <div class="form-group" id="mcp-form-body">
-              <label style="display: flex; align-items: center; gap: 6px;">
-                mcp_config.json 
-                <span class="material-symbols-outlined" title="Only HTTP/SSE MCP endpoints are supported. Configure your servers as a JSON object. Use headers/env to pass HTTP headers." style="font-size: 16px; cursor: help;">info</span>
-              </label>
-              <textarea id="mcp-textarea" rows="12" style="width: 100%; font-family: monospace; background: #000; color: #fff; border: 1px solid #333; padding: 10px; resize: vertical; outline: none; line-height: 1.4;"></textarea>
-              
-              <div id="mcp-servers-list-container" style="margin-top: 15px; color: #94a3b8;">
-                <strong style="font-size: 1.05em;">MCP Servers:</strong>
-                <ul style="margin: 8px 0 0 20px; padding: 0; list-style-type: none;" id="mcp-servers-ul"></ul>
-              </div>
-
-              <div id="mcp-error-wrapper" style="display: none; margin-top: 15px; padding: 12px; background: #0a0a0a; border: 1px solid #333;">
-                <div style="font-weight: bold; margin-bottom: 10px; color: #ef4444; font-size: 1.05em; display: flex; align-items: center; gap: 6px;">
-                  <span class="material-symbols-outlined" style="font-size: 16px;">error</span> 
-                  Connection Errors
-                </div>
-                <div id="mcp-error-container" style="display: flex; flex-direction: column; gap: 6px;"></div>
+            <div class="form-group">
+              <label>Host URL</label>
+              <div class="input-row">
+                <input type="text" id="ollama-url" placeholder="http://localhost:11434">
               </div>
             </div>
-
             <div class="actions">
-              <button type="button" class="btn btn-secondary" id="mcp-open-editor" title="Open mcp_config.json in VS Code editor tab">Open in Editor</button>
-              <button type="button" class="btn btn-danger" id="mcp-reset-btn">Reset</button>
-              <button type="button" class="btn btn-secondary" id="mcp-test-btn">Test Connection</button>
-              <button type="button" class="btn btn-primary" id="mcp-save-btn">Save</button>
+              <button type="button" class="btn btn-secondary" onclick="testProvider('ollama')">Test Connection</button>
+              <button type="button" class="btn btn-primary" onclick="saveUrl('ollama.baseUrl', 'ollama-url')">Save</button>
+            </div>
+          </div>
+
+          <!-- OpenClaw -->
+          <div class="provider-card" id="card-openclaw">
+            <div class="provider-header">
+              <div class="provider-name">OpenClaw <span class="provider-status" id="openclaw-status-badge">Not Configured</span></div>
+            </div>
+            <div class="form-group">
+              <label>Host URL</label>
+              <div class="input-row">
+                <input type="text" id="openclaw-url" placeholder="http://localhost:3141">
+              </div>
+            </div>
+            <div class="actions">
+              <button type="button" class="btn btn-secondary" onclick="testProvider('openclaw')">Test Connection</button>
+              <button type="button" class="btn btn-primary" onclick="saveUrl('openclaw.baseUrl', 'openclaw-url')">Save</button>
+            </div>
+          </div>
+
+          <!-- Hermes -->
+          <div class="provider-card" id="card-hermes">
+            <div class="provider-header">
+              <div class="provider-name">Hermes Desktop <span class="provider-status" id="hermes-status-badge">Not Configured</span></div>
+            </div>
+            <div class="form-group">
+              <label>Host URL</label>
+              <div class="input-row">
+                <input type="text" id="hermes-url" placeholder="http://localhost:8642/v1">
+              </div>
+            </div>
+            <div class="actions">
+              <button type="button" class="btn btn-secondary" onclick="testProvider('hermes')">Test Connection</button>
+              <button type="button" class="btn btn-primary" onclick="saveUrl('hermes.baseUrl', 'hermes-url')">Save</button>
             </div>
           </div>
 
@@ -630,62 +653,6 @@ export class SettingsPanel {
             <div class="actions">
               <button type="button" class="btn btn-secondary" onclick="testProvider('opencode')">Test Connection</button>
               <button type="button" class="btn btn-primary" onclick="saveUrl('opencode.baseUrl', 'opencode-url')">Save</button>
-            </div>
-          </div>
-        </div>
-
-        <!-- LOCAL AGENTS & MODELS -->
-        <div class="category-section" id="local">
-          <h3>Local Agents & Models</h3>
-
-          <!-- Ollama -->
-          <div class="provider-card" id="card-ollama">
-            <div class="provider-header">
-              <div class="provider-name">Ollama (Local) <span class="provider-status active">Configured</span></div>
-            </div>
-            <div class="form-group">
-              <label>Host URL</label>
-              <div class="input-row">
-                <input type="text" id="ollama-url" placeholder="http://localhost:11434">
-              </div>
-            </div>
-            <div class="actions">
-              <button type="button" class="btn btn-secondary" onclick="testProvider('ollama')">Test Connection</button>
-              <button type="button" class="btn btn-primary" onclick="saveUrl('ollama.baseUrl', 'ollama-url')">Save</button>
-            </div>
-          </div>
-
-          <!-- OpenClaw -->
-          <div class="provider-card" id="card-openclaw">
-            <div class="provider-header">
-              <div class="provider-name">OpenClaw <span class="provider-status active">Configured</span></div>
-            </div>
-            <div class="form-group">
-              <label>Host URL</label>
-              <div class="input-row">
-                <input type="text" id="openclaw-url" placeholder="http://localhost:3141">
-              </div>
-            </div>
-            <div class="actions">
-              <button type="button" class="btn btn-secondary" onclick="testProvider('openclaw')">Test Connection</button>
-              <button type="button" class="btn btn-primary" onclick="saveUrl('openclaw.baseUrl', 'openclaw-url')">Save</button>
-            </div>
-          </div>
-
-          <!-- Hermes -->
-          <div class="provider-card" id="card-hermes">
-            <div class="provider-header">
-              <div class="provider-name">Hermes Desktop <span class="provider-status active">Configured</span></div>
-            </div>
-            <div class="form-group">
-              <label>Host URL</label>
-              <div class="input-row">
-                <input type="text" id="hermes-url" placeholder="http://localhost:8642/v1">
-              </div>
-            </div>
-            <div class="actions">
-              <button type="button" class="btn btn-secondary" onclick="testProvider('hermes')">Test Connection</button>
-              <button type="button" class="btn btn-primary" onclick="saveUrl('hermes.baseUrl', 'hermes-url')">Save</button>
             </div>
           </div>
         </div>
@@ -814,6 +781,52 @@ export class SettingsPanel {
           </div>
         </div>
 
+        <!-- MCP SERVERS (last) -->
+        <div class="category-section" id="mcp">
+          <h3>MCP Servers</h3>
+
+          <div class="provider-card" id="card-mcp">
+            <div class="provider-header">
+              <div class="provider-name">
+                MCP Servers
+                <span class="provider-status" id="mcp-status-badge">Not Configured</span>
+              </div>
+              <label class="toggle-switch" title="Enable/Disable MCP tool calling for the agent">
+                <input type="checkbox" id="mcp-toggle" checked>
+                <span class="slider"></span>
+              </label>
+            </div>
+
+            <div class="form-group" id="mcp-form-body">
+              <label style="display: flex; align-items: center; gap: 6px;">
+                mcp_config.json
+                <span class="material-symbols-outlined" title="Only HTTP/SSE MCP endpoints are supported. Configure your servers as a JSON object. Use headers/env to pass HTTP headers." style="font-size: 16px; cursor: help;">info</span>
+              </label>
+              <textarea id="mcp-textarea" rows="12" style="width: 100%; font-family: monospace; background: #000; color: #fff; border: 1px solid #333; padding: 10px; resize: vertical; outline: none; line-height: 1.4;"></textarea>
+
+              <div id="mcp-servers-list-container" style="margin-top: 15px; color: #94a3b8;">
+                <strong style="font-size: 1.05em;">MCP Servers:</strong>
+                <ul style="margin: 8px 0 0 20px; padding: 0; list-style-type: none;" id="mcp-servers-ul"></ul>
+              </div>
+
+              <div id="mcp-error-wrapper" style="display: none; margin-top: 15px; padding: 12px; background: #0a0a0a; border: 1px solid #333;">
+                <div style="font-weight: bold; margin-bottom: 10px; color: #ef4444; font-size: 1.05em; display: flex; align-items: center; gap: 6px;">
+                  <span class="material-symbols-outlined" style="font-size: 16px;">error</span>
+                  Connection Errors
+                </div>
+                <div id="mcp-error-container" style="display: flex; flex-direction: column; gap: 6px;"></div>
+              </div>
+            </div>
+
+            <div class="actions">
+              <button type="button" class="btn btn-secondary" id="mcp-open-editor" title="Open mcp_config.json in VS Code editor tab">Open in Editor</button>
+              <button type="button" class="btn btn-danger" id="mcp-reset-btn">Reset</button>
+              <button type="button" class="btn btn-secondary" id="mcp-test-btn">Test Connection</button>
+              <button type="button" class="btn btn-primary" id="mcp-save-btn">Save</button>
+            </div>
+          </div>
+        </div>
+
       </div>
     </main>
   </div>
@@ -858,6 +871,14 @@ export class SettingsPanel {
       }
     });
 
+    function setBadge(id, configured) {
+      const badge = document.getElementById(id);
+      if (!badge) { return; }
+      badge.textContent = configured ? 'Configured' : 'Not Configured';
+      if (configured) { badge.classList.add('active'); }
+      else { badge.classList.remove('active'); }
+    }
+
     function populateData(data) {
       if (!data) return;
 
@@ -869,16 +890,19 @@ export class SettingsPanel {
         if (data.urls.opencode) document.getElementById('opencode-url').value = data.urls.opencode;
       }
 
-      // Keys badges
+      // Cloud/aggregator key badges (badge id = provider + '-status-badge')
       if (data.keys) {
         for (const [provider, configured] of Object.entries(data.keys)) {
-          const badge = document.getElementById(provider + '-status-badge');
-          if (badge) {
-            badge.textContent = configured ? 'Configured' : 'Not Configured';
-            if (configured) badge.classList.add('active');
-            else badge.classList.remove('active');
-          }
+          setBadge(provider + '-status-badge', configured);
         }
+      }
+
+      // Local provider badges — configured means a custom URL was explicitly saved
+      if (data.localConfigured) {
+        setBadge('ollama-status-badge', data.localConfigured.ollama);
+        setBadge('hermes-status-badge', data.localConfigured.hermes);
+        setBadge('openclaw-status-badge', data.localConfigured.openclaw);
+        setBadge('opencode-status-badge', data.localConfigured.opencode);
       }
 
       // MCP

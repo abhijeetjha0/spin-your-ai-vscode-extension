@@ -18,8 +18,7 @@ export class OllamaCloudProvider extends BaseProvider {
         if (!apiKey) { return []; }
 
         try {
-            const baseUrl = this.getBaseUrl();
-            const response = await HttpService.fetch(`${baseUrl}/models`, {
+            const response = await HttpService.fetch(`${this.config.baseUrl}/models`, {
                 headers: { 'Authorization': `Bearer ${apiKey}` }
             });
             if (!response.ok) { return []; }
@@ -41,8 +40,7 @@ export class OllamaCloudProvider extends BaseProvider {
         const apiKey = await this.getApiKey();
         if (!apiKey) { throw new Error('Ollama Cloud API key not found'); }
 
-        const baseUrl = this.getBaseUrl();
-        const stream = HttpService.streamServerSentEvents(`${baseUrl}/chat/completions`, {
+        const stream = HttpService.streamServerSentEvents(`${this.config.baseUrl}/chat/completions`, {
             method: 'POST',
             headers: {
                 'Authorization': `Bearer ${apiKey}`,

@@ -11,6 +11,9 @@ export abstract class BaseProvider {
     }
 
     protected getBaseUrl(): string {
+        if (this.config.type === 'cloud' || this.config.type === 'aggregator') {
+            return this.config.baseUrl || '';
+        }
         const customUrl = vscode.workspace.getConfiguration('spinYourAi').get<string>(`${this.config.id}.baseUrl`);
         return customUrl || this.config.baseUrl || '';
     }

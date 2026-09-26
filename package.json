@@ -121,61 +121,6 @@
         }
       ]
     },
-    "configuration": {
-      "title": "Spin Your AI",
-      "properties": {
-        "spinYourAi.ollama.baseUrl": {
-          "type": "string",
-          "default": "http://localhost:11434",
-          "description": "Base URL for local Ollama instance."
-        },
-        "spinYourAi.mcp.enabled": {
-          "type": "boolean",
-          "default": true,
-          "description": "Enable or disable Model Context Protocol (MCP) tool integration for AI agents."
-        },
-        "spinYourAi.mcp.config": {
-          "type": "object",
-          "default": {
-            "mcpServers": {
-              "n8n-mcp": {
-                "type": "http",
-                "url": "http://localhost:5678/mcp-server/http",
-                "headers": {
-                  "Authorization": "Bearer YOUR_ACCESS_TOKEN_HERE"
-                }
-              }
-            }
-          },
-          "description": "JSON configuration for Model Context Protocol (MCP) servers providing tools to the AI agent."
-        },
-        "spinYourAi.hermes.baseUrl": {
-          "type": "string",
-          "default": "http://localhost:8642/v1",
-          "description": "Base URL for Hermes agent endpoint."
-        },
-        "spinYourAi.opencode.baseUrl": {
-          "type": "string",
-          "default": "http://localhost:3000",
-          "description": "Base URL for OpenCode server endpoint."
-        },
-        "spinYourAi.openclaw.baseUrl": {
-          "type": "string",
-          "default": "http://localhost:3141",
-          "description": "Base URL for OpenClaw local agent endpoint."
-        },
-        "spinYourAi.huggingface.baseUrl": {
-          "type": "string",
-          "default": "https://api-inference.huggingface.co/v1",
-          "description": "Base URL for Hugging Face inference API."
-        },
-        "spinYourAi.ollamaCloud.baseUrl": {
-          "type": "string",
-          "default": "https://ollama.com/v1",
-          "description": "Base URL for Ollama Cloud API."
-        }
-      }
-    },
     "walkthroughs": [
       {
         "id": "spin-your-ai.welcome",
