@@ -106,7 +106,7 @@ export class AnthropicProvider extends BaseProvider {
                         input: tc.inputJson ? JSON.parse(tc.inputJson) : {}
                     });
 
-                    yield { text: `\n\n> ⚙️ *Executing MCP tool \`${tc.name}\`...*\n\n`, done: false };
+                    yield { text: `\n\n> <span class="material-symbols-outlined" style="font-size:16px;vertical-align:-3px;color:#a78bfa">settings</span> *Executing MCP tool \`${tc.name}\`...*\n\n`, done: false };
 
                     let result: any;
                     try {

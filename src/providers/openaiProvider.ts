@@ -46,7 +46,7 @@ export class OpenAIProvider extends BaseProvider {
 
     async *streamChat(messages: Message[], modelId: string, signal?: AbortSignal): AsyncGenerator<StreamChunk, void, unknown> {
         const apiKey = await this.getApiKey();
-        if (!apiKey) { throw new Error('OpenAI API key not found'); }
+        if (this.config.apiKeyRequired && !apiKey) { throw new Error(`${this.config.name} API key not found`); }
 
         const baseUrl = this.getBaseUrl();
         const tools = await McpService.getActiveTools();
@@ -63,12 +63,14 @@ export class OpenAIProvider extends BaseProvider {
                 payload.tools = tools;
             }
 
+            const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+            if (apiKey) {
+                headers['Authorization'] = `Bearer ${apiKey}`;
+            }
+
             const stream = HttpService.streamServerSentEvents(`${baseUrl}/chat/completions`, {
                 method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${apiKey}`,
-                    'Content-Type': 'application/json'
-                },
+                headers,
                 body: JSON.stringify(payload),
                 signal
             });

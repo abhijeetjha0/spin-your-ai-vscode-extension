@@ -39,3 +39,6 @@ When contributing to this project, adhere strictly to the following rules and de
 - **MCP Integration:** The extension supports both HTTP/SSE and STDIO MCP servers via `McpService`. Ensure that new MCP features are compatible with `mcp_config.json` parsing. Local models (like Ollama) generally do not support tool execution natively, so do not force tool payloads onto providers that don't explicitly support them.
 
 Follow these instructions whenever making modifications or adding new features to maintain the aesthetic integrity, performance, and security standards of the extension.
+
+## 5. Build & Packaging
+- **Update VSIX Package:** After making functional changes or adding new features to the extension, you MUST build and update the `.vsix` package (using `npm run build:vsix`) so that the latest changes can be installed and distributed.

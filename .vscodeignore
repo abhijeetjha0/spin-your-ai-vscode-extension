@@ -10,3 +10,11 @@ src/**
 esbuild.js
 **/*.map
 **/*.ts
+readme.md
+README_MARKETPLACE.md
+README.md
+.nvmrc
+AGENTS.md
+skills-lock.json
+tsconfig.json
+.agents/**
