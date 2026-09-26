@@ -5,7 +5,7 @@ Spin up AI models from your editor, powered by local AI, cloud frontiers, and Mo
 ## Features
 
 - **Multi-Provider Support**: Switch seamlessly between local models (Ollama, Hermes, OpenCode, OpenClaw), MCP servers, and cloud frontiers (OpenAI, Anthropic, Gemini, OpenRouter, Hugging Face, Ollama Cloud).
-- **Sidebar Chat**: Native-feeling Webview chat interface with streaming responses.
+- **Sidebar Chat**: Native-feeling Webview chat interface with streaming responses, conversation history, and quick model reloads.
 - **Context Injection**: Use `@file` and `@workspace` to instantly feed relevant context to any LLM.
 - **Editor Integration**: Highlight code and right-click to Explain, Refactor, or Fix Bugs.
 - **Secure Key Storage**: API keys are encrypted in your OS native keychain (macOS Keychain, Windows Credential Manager, Linux Secret Service) via VS Code's `SecretStorage` API.

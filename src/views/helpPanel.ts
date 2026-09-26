@@ -182,11 +182,13 @@ export class HelpPanel {
         <p>The main chat interface lives in the VS Code sidebar panel.</p>
         <ul>
           <li><strong>Select a Model:</strong> Click the model dropdown at the top to switch between available AI providers and models.</li>
+          <li><strong>Chat History:</strong> Click the <strong>history icon</strong> at the top left to open your past chat sessions. Click a session to restore it, or click the delete button next to a session to remove it.</li>
+          <li><strong>Reload Models:</strong> Click the <strong>refresh icon</strong> at the top right to force reload your available models and MCP configurations.</li>
+          <li><strong>New Chat:</strong> Click the <strong>plus icon</strong> at the top right to start a fresh conversation.</li>
           <li><strong>Include Page Content:</strong> Toggle &ldquo;Include page content&rdquo; to automatically inject your active editor file into the prompt.</li>
           <li><strong>@file tag:</strong> Type <code>@file</code> anywhere in your message to inject your active editor file.</li>
           <li><strong>@workspace tag:</strong> Type <code>@workspace</code> to include the workspace name in context.</li>
           <li><strong>Attachments:</strong> Click the paperclip icon to upload images, documents, or code files to send to multimodal models.</li>
-          <li><strong>New Chat:</strong> Click the trash icon at the top to reset the conversation history.</li>
           <li><strong>Stop Generation:</strong> Click the stop button to cancel a running response stream.</li>
           <li><strong>Code Actions:</strong> Right-click selected code in the editor and choose <strong>Spin Your AI: Explain Code</strong>, <strong>Refactor Code</strong>, or <strong>Fix Bug</strong>.</li>
         </ul>
