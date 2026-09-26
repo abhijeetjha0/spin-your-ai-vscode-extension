@@ -37,6 +37,9 @@ When contributing to this project, adhere strictly to the following rules and de
   - `src/services/`: Contains core business logic and state management (`vault.ts`, `configService.ts`, `mcpService.ts`, `http.ts`).
 - **HTTP Client:** Always use `HttpService.fetch` for network requests to ensure proper proxy handling and timeouts.
 - **MCP Integration:** The extension supports both HTTP/SSE and STDIO MCP servers via `McpService`. Ensure that new MCP features are compatible with `mcp_config.json` parsing. Local models (like Ollama) generally do not support tool execution natively, so do not force tool payloads onto providers that don't explicitly support them.
+- **Auto-Scrolling:** When streaming text in the chat UI, implement "Smart Scrolling": only auto-scroll (`scrollTop = scrollHeight`) if the user is already near the bottom (within a ~150px threshold). This prevents "jitter" and dizziness if the user tries to scroll up while the model is generating.
+- **Context Menus & Auto-Send:** Editor context menu actions (Explain, Refactor, Fix) should use rich, detailed system prompts (not simple one-liners) and invoke `autoSend: true`. To avoid race conditions where the Webview tries to send a message before the background APIs have finished fetching the model list, buffer auto-send requests (e.g., `pendingAutoSend`) until models are fully loaded.
+- **Provider Toggling:** Allow users to dynamically enable or disable specific providers via `ConfigService` (`[providerId].enabled`). Disabled providers should have their models filtered out to unclutter the dropdown UI.
 
 Follow these instructions whenever making modifications or adding new features to maintain the aesthetic integrity, performance, and security standards of the extension.
 

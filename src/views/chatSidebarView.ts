@@ -136,6 +136,9 @@ export class ChatSidebarViewProvider implements vscode.WebviewViewProvider {
 
         // Probe all providers in parallel - only those that successfully return models are shown
         await Promise.all(providers.map(async (p) => {
+            const isEnabled = ConfigService.get<boolean>(`${p.id}.enabled`) ?? true;
+            if (!isEnabled) { return; }
+            
             const provider = ProviderRegistry.getProvider(p.id);
             if (!provider) { return; }
             try {

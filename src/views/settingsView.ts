@@ -162,6 +162,22 @@ export class SettingsPanel {
                 break;
             }
 
+            case 'TOGGLE_PROVIDER': {
+                const { providerId, enabled } = message;
+                try {
+                    await ConfigService.update(`${providerId}.enabled`, enabled);
+                    const data = await this._getAllConfigData();
+                    this._panel.webview.postMessage({ type: 'INIT_DATA', data });
+                } catch (err: any) {
+                    this._panel.webview.postMessage({
+                        type: 'TOAST',
+                        text: `Error toggling provider: ${err.message}`,
+                        variant: 'error'
+                    });
+                }
+                break;
+            }
+
             case 'TEST_PROVIDER': {
                 const { providerId } = message;
                 this._panel.webview.postMessage({ type: 'TOAST', text: `Testing ${providerId}...`, variant: 'info' });
@@ -231,7 +247,12 @@ export class SettingsPanel {
         const mcpRaw = McpService.getRawConfig();
         const mcpEnabled = McpService.isEnabled();
 
-        return { keys, urls, localConfigured, mcpRaw, mcpEnabled };
+        const providerEnabled: Record<string, boolean> = {};
+        for (const p of ProviderRegistry.getAllProviders()) {
+            providerEnabled[p.id] = ConfigService.get<boolean>(`${p.id}.enabled`) ?? true;
+        }
+
+        return { keys, urls, localConfigured, mcpRaw, mcpEnabled, providerEnabled };
     }
 
     public dispose() {
@@ -591,6 +612,10 @@ export class SettingsPanel {
           <div class="provider-card" id="card-ollama">
             <div class="provider-header">
               <div class="provider-name">Ollama (Local) <span class="provider-status" id="ollama-status-badge">Not Configured</span></div>
+              <label class="toggle-switch" title="Enable/Disable this provider">
+                <input type="checkbox" class="provider-enable-toggle" data-id="ollama">
+                <span class="slider"></span>
+              </label>
             </div>
             <div class="form-group">
               <label>Host URL</label>
@@ -608,6 +633,10 @@ export class SettingsPanel {
           <div class="provider-card" id="card-openclaw">
             <div class="provider-header">
               <div class="provider-name">OpenClaw <span class="provider-status" id="openclaw-status-badge">Not Configured</span></div>
+              <label class="toggle-switch" title="Enable/Disable this provider">
+                <input type="checkbox" class="provider-enable-toggle" data-id="openclaw">
+                <span class="slider"></span>
+              </label>
             </div>
             <div class="form-group">
               <label>Host URL</label>
@@ -625,6 +654,10 @@ export class SettingsPanel {
           <div class="provider-card" id="card-hermes">
             <div class="provider-header">
               <div class="provider-name">Hermes Desktop <span class="provider-status" id="hermes-status-badge">Not Configured</span></div>
+              <label class="toggle-switch" title="Enable/Disable this provider">
+                <input type="checkbox" class="provider-enable-toggle" data-id="hermes">
+                <span class="slider"></span>
+              </label>
             </div>
             <div class="form-group">
               <label>Host URL</label>
@@ -642,6 +675,10 @@ export class SettingsPanel {
           <div class="provider-card" id="card-opencode">
             <div class="provider-header">
               <div class="provider-name">OpenCode <span class="provider-status" id="opencode-status-badge">Not Configured</span></div>
+              <label class="toggle-switch" title="Enable/Disable this provider">
+                <input type="checkbox" class="provider-enable-toggle" data-id="opencode">
+                <span class="slider"></span>
+              </label>
             </div>
             <div class="form-group">
               <label>Host URL</label>
@@ -664,6 +701,10 @@ export class SettingsPanel {
           <div class="provider-card" id="card-openai">
             <div class="provider-header">
               <div class="provider-name">OpenAI <span class="provider-status" id="openai-status-badge">Not Configured</span></div>
+              <label class="toggle-switch" title="Enable/Disable this provider">
+                <input type="checkbox" class="provider-enable-toggle" data-id="openai">
+                <span class="slider"></span>
+              </label>
             </div>
             <div class="form-group">
               <label>API Key</label>
@@ -683,6 +724,10 @@ export class SettingsPanel {
           <div class="provider-card" id="card-anthropic">
             <div class="provider-header">
               <div class="provider-name">Anthropic <span class="provider-status" id="anthropic-status-badge">Not Configured</span></div>
+              <label class="toggle-switch" title="Enable/Disable this provider">
+                <input type="checkbox" class="provider-enable-toggle" data-id="anthropic">
+                <span class="slider"></span>
+              </label>
             </div>
             <div class="form-group">
               <label>API Key</label>
@@ -702,6 +747,10 @@ export class SettingsPanel {
           <div class="provider-card" id="card-gemini">
             <div class="provider-header">
               <div class="provider-name">Google Gemini <span class="provider-status" id="gemini-status-badge">Not Configured</span></div>
+              <label class="toggle-switch" title="Enable/Disable this provider">
+                <input type="checkbox" class="provider-enable-toggle" data-id="gemini">
+                <span class="slider"></span>
+              </label>
             </div>
             <div class="form-group">
               <label>API Key</label>
@@ -721,6 +770,10 @@ export class SettingsPanel {
           <div class="provider-card" id="card-ollamaCloud">
             <div class="provider-header">
               <div class="provider-name">Ollama Cloud <span class="provider-status" id="ollamaCloud-status-badge">Not Configured</span></div>
+              <label class="toggle-switch" title="Enable/Disable this provider">
+                <input type="checkbox" class="provider-enable-toggle" data-id="ollamaCloud">
+                <span class="slider"></span>
+              </label>
             </div>
             <div class="form-group">
               <label>API Key</label>
@@ -740,6 +793,10 @@ export class SettingsPanel {
           <div class="provider-card" id="card-huggingface">
             <div class="provider-header">
               <div class="provider-name">Hugging Face <span class="provider-status" id="huggingface-status-badge">Not Configured</span></div>
+              <label class="toggle-switch" title="Enable/Disable this provider">
+                <input type="checkbox" class="provider-enable-toggle" data-id="huggingface">
+                <span class="slider"></span>
+              </label>
             </div>
             <div class="form-group">
               <label>API Key</label>
@@ -764,6 +821,10 @@ export class SettingsPanel {
           <div class="provider-card" id="card-openrouter">
             <div class="provider-header">
               <div class="provider-name">OpenRouter <span class="provider-status" id="openrouter-status-badge">Not Configured</span></div>
+              <label class="toggle-switch" title="Enable/Disable this provider">
+                <input type="checkbox" class="provider-enable-toggle" data-id="openrouter">
+                <span class="slider"></span>
+              </label>
             </div>
             <div class="form-group">
               <label>API Key</label>
@@ -904,6 +965,15 @@ export class SettingsPanel {
         setBadge('opencode-status-badge', data.localConfigured.opencode);
       }
 
+      if (data.providerEnabled) {
+        for (const [provider, isEnabled] of Object.entries(data.providerEnabled)) {
+          const toggle = document.querySelector(\`.provider-enable-toggle[data-id="\${provider}"]\`);
+          if (toggle) {
+            toggle.checked = isEnabled;
+          }
+        }
+      }
+
       // MCP
       if (data.mcpRaw) {
         mcpTextarea.value = data.mcpRaw;
@@ -963,6 +1033,18 @@ export class SettingsPanel {
       const formBody = document.getElementById('mcp-form-body');
       formBody.style.opacity = mcpToggle.checked ? '1' : '0.5';
       updateMcpServerList();
+    });
+
+    document.querySelectorAll('.provider-enable-toggle').forEach(toggle => {
+      toggle.addEventListener('change', (e) => {
+        const providerId = e.target.getAttribute('data-id');
+        const enabled = e.target.checked;
+        vscode.postMessage({
+          type: 'TOGGLE_PROVIDER',
+          providerId,
+          enabled
+        });
+      });
     });
 
     document.getElementById('mcp-save-btn').addEventListener('click', () => {
