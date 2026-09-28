@@ -1,6 +1,6 @@
 # Spin Your AI (VS Code Extension) - Agent Rules & Guidelines
 
-Welcome to **Spin Your AI** (VS Code Extension), a powerful VS Code extension designed to spin up AI models directly from your editor. It supports a wide range of cloud and local providers (OpenAI, Anthropic, Gemini, OpenRouter, Ollama, etc.) with multimodality, page context awareness, and Model Context Protocol (MCP) tool execution.
+Welcome to **Spin Your AI** (VS Code Extension), a powerful VS Code extension designed to spin up AI models directly from your editor. It supports a wide range of cloud and local providers (OpenAI, Anthropic, Gemini, OpenRouter, OpenCode, OpenCode Zen, Ollama, etc.) with multimodality, page context awareness, and Model Context Protocol (MCP) tool execution.
 
 When contributing to this project, adhere strictly to the following rules and design philosophies.
 

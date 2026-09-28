@@ -4,14 +4,14 @@ Spin up AI models from your editor, powered by local AI, cloud frontiers, and Mo
 
 ## Features
 
-- **Multi-Provider Support**: Switch seamlessly between local models (Ollama, Hermes, OpenCode, OpenClaw), MCP servers, and cloud frontiers (OpenAI, Anthropic, Gemini, OpenRouter, Hugging Face, Ollama Cloud).
+- **Multi-Provider Support**: Switch seamlessly between local models (Ollama, Hermes, OpenCode, OpenClaw), MCP servers, and cloud frontiers (OpenAI, Anthropic, Gemini, OpenRouter, OpenCode Zen, Hugging Face, Ollama Cloud).
 - **Sidebar Chat**: Native-feeling Webview chat interface with streaming responses, conversation history, and quick model reloads.
 - **Context Injection**: Use `@file` and `@workspace` to instantly feed relevant context to any LLM.
 - **Editor Integration**: Highlight code and right-click to Explain, Refactor, or Fix Bugs.
 - **Secure Key Storage**: API keys are encrypted in your OS native keychain (macOS Keychain, Windows Credential Manager, Linux Secret Service) via VS Code's `SecretStorage` API.
 - **Zero Config Local**: Connects directly to Ollama at `localhost:11434` out of the box.
 - **Model Context Protocol (MCP)**: Native HTTP/SSE endpoint support for MCP tool servers.
-- **Local Autonomous Agents**: Direct integration for Hermes, OpenCode, and OpenClaw endpoints.
+- **Local Autonomous Agents**: Direct integration for Hermes, OpenCode (with Basic Auth support), and OpenClaw endpoints.
 
 ## Getting Started
 
@@ -45,6 +45,7 @@ All commands are prefixed with **Spin Your AI**:
 - `Spin Your AI: Set Anthropic Key`: Securely store Anthropic API key.
 - `Spin Your AI: Set Gemini Key`: Securely store Google Gemini API key.
 - `Spin Your AI: Set OpenRouter Key`: Securely store OpenRouter API key.
+- `Spin Your AI: Set OpenCode Zen Key`: Securely store OpenCode Zen API key.
 - `Spin Your AI: Set Hugging Face Key`: Securely store Hugging Face API key.
 - `Spin Your AI: Set Ollama Cloud Key`: Securely store Ollama Cloud API key.
 
@@ -52,7 +53,7 @@ All commands are prefixed with **Spin Your AI**:
 - `Spin Your AI: Configure Ollama Endpoint`: Set custom Ollama host/port (default `http://localhost:11434`).
 - `Spin Your AI: Edit MCP Configuration (JSON)`: Configure external MCP tool servers (e.g., `n8n-mcp`) via editable `mcp_config.json`.
 - `Spin Your AI: Configure Hermes Endpoint`: Set Hermes agent endpoint (default `http://localhost:8642/v1`).
-- `Spin Your AI: Configure OpenCode Endpoint`: Set OpenCode endpoint (default `http://localhost:3000`).
+- `Spin Your AI: Configure OpenCode Endpoint`: Set OpenCode endpoint (default `http://localhost:3000` or `http://localhost:4096`).
 - `Spin Your AI: Configure OpenClaw Endpoint`: Set OpenClaw agent endpoint (default `http://localhost:3141`).
 
 ## Development
