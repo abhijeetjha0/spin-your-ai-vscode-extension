@@ -4,8 +4,8 @@ import { HttpService } from '../utils/http';
 import { McpService } from '../services/mcpService';
 
 export class OpenAIProvider extends BaseProvider {
-    constructor() {
-        super({
+    constructor(config?: any) {
+        super(config || {
             id: 'openai',
             name: 'OpenAI',
             type: 'cloud',

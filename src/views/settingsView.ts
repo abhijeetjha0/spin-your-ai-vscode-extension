@@ -217,19 +217,22 @@ export class SettingsPanel {
             openrouter: !!(await VaultService.getKey('openrouter')),
             huggingface: !!(await VaultService.getKey('huggingface')),
             ollamaCloud: !!(await VaultService.getKey('ollamaCloud')),
-            opencodeZen: !!(await VaultService.getKey('opencodeZen'))
+            opencodeZen: !!(await VaultService.getKey('opencodeZen')),
+            opencode: !!(await VaultService.getKey('opencode'))
         };
 
         const ollamaUrl = ConfigService.get<string>('ollama.baseUrl') || 'http://localhost:11434';
         const hermesUrl = ConfigService.get<string>('hermes.baseUrl') || 'http://localhost:8642/v1';
         const openclawUrl = ConfigService.get<string>('openclaw.baseUrl') || 'http://localhost:3141';
         const opencodeUrl = ConfigService.get<string>('opencode.baseUrl') || 'http://localhost:3000';
+        const opencodeUsername = ConfigService.get<string>('opencode.username') || '';
 
         const urls = {
             ollama: ollamaUrl,
             hermes: hermesUrl,
             openclaw: openclawUrl,
-            opencode: opencodeUrl
+            opencode: opencodeUrl,
+            opencodeUsername: opencodeUsername
         };
 
         // Local providers are considered 'configured' only if we can verify the service
@@ -683,9 +686,23 @@ export class SettingsPanel {
                 <input type="text" id="opencode-url" placeholder="http://localhost:3000">
               </div>
             </div>
+            <div class="form-group">
+              <label>Username</label>
+              <div class="input-row">
+                <input type="text" id="opencode-username" placeholder="Enter username...">
+              </div>
+            </div>
+            <div class="form-group">
+              <label>Password</label>
+              <div class="input-row">
+                <input type="password" id="opencode-key" placeholder="Enter password...">
+                <button type="button" class="icon-btn" onclick="togglePeek('opencode-key', this)"><span class="material-symbols-outlined">visibility</span></button>
+              </div>
+            </div>
             <div class="actions">
+              <button type="button" class="btn btn-danger" onclick="resetKey('opencode')">Reset</button>
               <button type="button" class="btn btn-secondary" onclick="testProvider('opencode')">Test Connection</button>
-              <button type="button" class="btn btn-primary" onclick="saveUrl('opencode.baseUrl', 'opencode-url')">Save</button>
+              <button type="button" class="btn btn-primary" onclick="saveOpenCode()">Save</button>
             </div>
           </div>
         </div>
@@ -836,6 +853,29 @@ export class SettingsPanel {
               <button type="button" class="btn btn-primary" onclick="saveKey('openrouter', 'openrouter-key')">Save</button>
             </div>
           </div>
+
+          <!-- OpenCode Zen -->
+          <div class="provider-card" id="card-opencodeZen">
+            <div class="provider-header">
+              <div class="provider-name">OpenCode Zen <span class="provider-status" id="opencodeZen-status-badge">Not Configured</span></div>
+              <label class="toggle-switch" title="Enable/Disable this provider">
+                <input type="checkbox" class="provider-enable-toggle" data-id="opencodeZen">
+                <span class="slider"></span>
+              </label>
+            </div>
+            <div class="form-group">
+              <label>API Key</label>
+              <div class="input-row">
+                <input type="password" id="opencodeZen-key" placeholder="API key...">
+                <button type="button" class="icon-btn" onclick="togglePeek('opencodeZen-key', this)"><span class="material-symbols-outlined">visibility</span></button>
+              </div>
+            </div>
+            <div class="actions">
+              <button type="button" class="btn btn-danger" onclick="resetKey('opencodeZen')">Reset</button>
+              <button type="button" class="btn btn-secondary" onclick="testProvider('opencodeZen')">Test Connection</button>
+              <button type="button" class="btn btn-primary" onclick="saveKey('opencodeZen', 'opencodeZen-key')">Save</button>
+            </div>
+          </div>
         </div>
 
         <!-- MCP SERVERS (last) -->
@@ -946,6 +986,7 @@ export class SettingsPanel {
         if (data.urls.openclaw) document.getElementById('openclaw-url').value = data.urls.openclaw;
         if (data.urls.hermes) document.getElementById('hermes-url').value = data.urls.hermes;
         if (data.urls.opencode) document.getElementById('opencode-url').value = data.urls.opencode;
+        if (data.urls.opencodeUsername !== undefined) document.getElementById('opencode-username').value = data.urls.opencodeUsername;
       }
 
       // Cloud/aggregator key badges (badge id = provider + '-status-badge')
@@ -1130,6 +1171,16 @@ export class SettingsPanel {
     function saveUrl(configKey, inputId) {
       const val = document.getElementById(inputId).value.trim();
       vscode.postMessage({ type: 'SAVE_URL', configKey, url: val });
+    }
+
+    function saveOpenCode() {
+      saveUrl('opencode.baseUrl', 'opencode-url');
+      saveUrl('opencode.username', 'opencode-username');
+      const passVal = document.getElementById('opencode-key').value.trim();
+      if (passVal) {
+        vscode.postMessage({ type: 'SAVE_KEY', providerId: 'opencode', apiKey: passVal });
+        document.getElementById('opencode-key').value = '';
+      }
     }
 
     function testProvider(providerId) {

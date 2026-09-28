@@ -11,11 +11,14 @@ export abstract class BaseProvider {
     }
 
     protected getBaseUrl(): string {
+        let url = '';
         if (this.config.type === 'cloud' || this.config.type === 'aggregator') {
-            return this.config.baseUrl || '';
+            url = this.config.baseUrl || '';
+        } else {
+            const customUrl = ConfigService.get<string>(`${this.config.id}.baseUrl`);
+            url = customUrl || this.config.baseUrl || '';
         }
-        const customUrl = ConfigService.get<string>(`${this.config.id}.baseUrl`);
-        return customUrl || this.config.baseUrl || '';
+        return url.replace(/\/+$/, '');
     }
 
     abstract listModels(): Promise<ModelInfo[]>;

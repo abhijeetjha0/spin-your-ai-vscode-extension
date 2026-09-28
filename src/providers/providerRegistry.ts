@@ -7,6 +7,7 @@ import { OpenRouterProvider } from './openrouterProvider';
 import { HuggingFaceProvider } from './huggingfaceProvider';
 import { OllamaCloudProvider } from './ollamaCloudProvider';
 import { OpenCodeProvider } from './opencodeProvider';
+import { OpenCodeZenProvider } from './opencodeZenProvider';
 import { HermesProvider } from './hermesProvider';
 import { OpenClawProvider } from './openclawProvider';
 import { ProviderConfig } from '../types';
@@ -23,6 +24,7 @@ export class ProviderRegistry {
         this.register(new HuggingFaceProvider());
         this.register(new OllamaCloudProvider());
         this.register(new OpenCodeProvider());
+        this.register(new OpenCodeZenProvider());
         this.register(new HermesProvider());
         this.register(new OpenClawProvider());
     }
