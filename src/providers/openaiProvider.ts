@@ -51,6 +51,7 @@ export class OpenAIProvider extends BaseProvider {
         const baseUrl = this.getBaseUrl();
         const tools = await McpService.getActiveTools();
         const currentMessages: any[] = [...messages];
+        let toolCallCount = 0;
 
         while (true) {
             const payload: any = {
@@ -105,6 +106,11 @@ export class OpenAIProvider extends BaseProvider {
 
             const toolCalls = Object.values(toolCallsBuffer);
             if (toolCalls.length > 0) {
+                toolCallCount++;
+                if (toolCallCount > 50) {
+                    throw new Error('Too many sequential tool calls (>50). The model may be stuck in a loop.');
+                }
+
                 currentMessages.push({
                     role: 'assistant',
                     tool_calls: toolCalls,

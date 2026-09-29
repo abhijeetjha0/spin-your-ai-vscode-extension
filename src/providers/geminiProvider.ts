@@ -55,6 +55,7 @@ export class GeminiProvider extends BaseProvider {
         
         const systemInstruction = messages.filter(m => m.role === 'system').map(m => m.content).join('\n');
         const currentContents: any[] = [...contents];
+        let toolCallCount = 0;
 
         while (true) {
             const body: any = { contents: currentContents };
@@ -146,6 +147,11 @@ export class GeminiProvider extends BaseProvider {
             }
 
             if (functionCalls.length > 0) {
+                toolCallCount++;
+                if (toolCallCount > 50) {
+                    throw new Error('Too many sequential tool calls (>50). The model may be stuck in a loop.');
+                }
+
                 // Echo the model's exact generated parts back (required by Gemini multi-turn API)
                 currentContents.push({
                     role: 'model',

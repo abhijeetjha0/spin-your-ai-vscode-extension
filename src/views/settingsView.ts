@@ -940,15 +940,7 @@ export class SettingsPanel {
     const mcpErrorContainer = document.getElementById('mcp-error-container');
 
     const DEFAULT_MCP_TEMPLATE = JSON.stringify({
-      "mcpServers": {
-        "n8n-mcp": {
-          "type": "http",
-          "url": "http://localhost:5678/mcp-server/http",
-          "headers": {
-            "Authorization": "Bearer YOUR_ACCESS_TOKEN_HERE"
-          }
-        }
-      }
+      "mcpServers": {}
     }, null, 2);
 
     // Ask extension for initial data

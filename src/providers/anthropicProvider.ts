@@ -37,6 +37,7 @@ export class AnthropicProvider extends BaseProvider {
             role: m.role,
             content: m.content
         }));
+        let toolCallCount = 0;
 
         while (true) {
             const body: any = {
@@ -95,6 +96,11 @@ export class AnthropicProvider extends BaseProvider {
 
             const toolCallList = Object.values(toolCalls);
             if (toolCallList.length > 0) {
+                toolCallCount++;
+                if (toolCallCount > 50) {
+                    throw new Error('Too many sequential tool calls (>50). The model may be stuck in a loop.');
+                }
+
                 const assistantContent: any[] = [];
                 const toolResults: any[] = [];
 

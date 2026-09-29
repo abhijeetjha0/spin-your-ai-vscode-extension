@@ -41,15 +41,7 @@ export interface McpTestResult {
 }
 
 const DEFAULT_MCP_CONFIG: McpConfigFile = {
-    mcpServers: {
-        'n8n-mcp': {
-            type: 'http',
-            url: 'http://localhost:5678/mcp-server/http',
-            headers: {
-                Authorization: 'Bearer YOUR_ACCESS_TOKEN_HERE'
-            }
-        }
-    }
+    mcpServers: {}
 };
 
 class StdioMcpClient {
