@@ -85,6 +85,31 @@ export class AgentToolService {
             {
                 type: 'function',
                 function: {
+                    name: 'workspace_search_files',
+                    description: 'Search for text or regex across workspace files. Returns matching relative file paths, line numbers, and code snippets without reading every file individually.',
+                    parameters: {
+                        type: 'object',
+                        properties: {
+                            query: {
+                                type: 'string',
+                                description: 'The text query or pattern to search for across the workspace.'
+                            },
+                            file_pattern: {
+                                type: 'string',
+                                description: 'Optional glob filter (e.g. "**/*.ts", "src/**", "*.json").'
+                            },
+                            max_results: {
+                                type: 'number',
+                                description: 'Maximum number of matches to return (default: 30).'
+                            }
+                        },
+                        required: ['query']
+                    }
+                }
+            },
+            {
+                type: 'function',
+                function: {
                     name: 'workspace_write_file',
                     description: 'Create a new file or completely overwrite an existing file. User permission with diff preview will be requested before modifying anything.',
                     parameters: {
@@ -164,6 +189,21 @@ export class AgentToolService {
                 return {
                     file_path: args.file_path,
                     content
+                };
+            }
+
+            case 'workspace_search_files': {
+                if (!args.query) {
+                    throw new Error('Missing required argument: "query"');
+                }
+                const results = await WorkspaceService.searchFiles(
+                    args.query,
+                    args.file_pattern,
+                    typeof args.max_results === 'number' ? args.max_results : 30
+                );
+                return {
+                    query: args.query,
+                    results
                 };
             }
 

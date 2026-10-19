@@ -54,6 +54,7 @@ export class OpenRouterProvider extends BaseProvider {
         const tools = await McpService.getActiveTools();
         const currentMessages: any[] = [...messages];
         let toolCallCount = 0;
+        let totalGeneratedContent = 0;
 
         while (true) {
             const payload: any = {
@@ -81,36 +82,48 @@ export class OpenRouterProvider extends BaseProvider {
             const toolCallsBuffer: Record<number, any> = {};
 
             for await (const data of stream) {
+                let parsed: any;
                 try {
-                    const parsed = JSON.parse(data);
-                    const delta = parsed.choices?.[0]?.delta;
-                    if (delta?.content) {
-                        yield { text: delta.content, done: false };
-                    }
-                    if (delta?.tool_calls) {
-                        for (const tc of delta.tool_calls) {
-                            if (!toolCallsBuffer[tc.index]) {
-                                toolCallsBuffer[tc.index] = {
-                                    id: tc.id,
-                                    type: 'function',
-                                    function: { name: tc.function?.name || '', arguments: '' }
-                                };
-                            }
-                            if (tc.function?.arguments) {
-                                toolCallsBuffer[tc.index].function.arguments += tc.function.arguments;
-                            }
+                    parsed = JSON.parse(data);
+                } catch {
+                    // Ignore parse errors on malformed chunks
+                    continue;
+                }
+
+                if (parsed.error) {
+                    const errMsg = parsed.error.message || (typeof parsed.error === 'string' ? parsed.error : JSON.stringify(parsed.error));
+                    throw new Error(errMsg);
+                }
+
+                const delta = parsed.choices?.[0]?.delta;
+                if (delta?.content) {
+                    totalGeneratedContent += delta.content.length;
+                    yield { text: delta.content, done: false };
+                }
+                if (delta?.tool_calls) {
+                    for (const tc of delta.tool_calls) {
+                        if (!toolCallsBuffer[tc.index]) {
+                            toolCallsBuffer[tc.index] = {
+                                id: tc.id || `call_${Date.now()}_${tc.index}`,
+                                type: 'function',
+                                function: { name: tc.function?.name || '', arguments: '' }
+                            };
+                        } else if (tc.id && !toolCallsBuffer[tc.index].id) {
+                            toolCallsBuffer[tc.index].id = tc.id;
+                        }
+                        if (tc.function?.arguments) {
+                            toolCallsBuffer[tc.index].function.arguments += tc.function.arguments;
                         }
                     }
-                } catch (e) {
-                    // Ignore parse errors on malformed chunks
                 }
             }
 
             const toolCalls = Object.values(toolCallsBuffer);
             if (toolCalls.length > 0) {
                 toolCallCount++;
-                if (toolCallCount > 50) {
-                    throw new Error('Too many sequential tool calls (>50). The model may be stuck in a loop.');
+                if (toolCallCount > 25) {
+                    yield { text: `\n\n> <span class="material-symbols-outlined" style="font-size:16px;vertical-align:-3px;color:#f59e0b">warning</span> *Reached sequential tool call safety limit (25 turns). Stopping autonomous loop.*`, done: false };
+                    break;
                 }
 
                 currentMessages.push({
@@ -126,10 +139,14 @@ export class OpenRouterProvider extends BaseProvider {
                     try {
                         const args = tc.function.arguments ? JSON.parse(tc.function.arguments) : {};
                         const result = await McpService.executeTool(toolName, args);
+                        let contentStr = typeof result === 'string' ? result : JSON.stringify(result);
+                        if (contentStr.length > 8000) {
+                            contentStr = contentStr.substring(0, 8000) + '\n... [Remaining output truncated to protect context window]';
+                        }
                         currentMessages.push({
                             role: 'tool',
                             tool_call_id: tc.id,
-                            content: typeof result === 'string' ? result : JSON.stringify(result)
+                            content: contentStr
                         });
                     } catch (err: any) {
                         currentMessages.push({
@@ -145,6 +162,10 @@ export class OpenRouterProvider extends BaseProvider {
             }
 
             break;
+        }
+
+        if (toolCallCount > 0 && totalGeneratedContent === 0) {
+            yield { text: `\n\n> <span class="material-symbols-outlined" style="font-size:16px;vertical-align:-3px;color:#94a3b8">info</span> *Completed ${toolCallCount} tool execution(s). Model finished without additional commentary.*`, done: false };
         }
 
         yield { text: '', done: true };

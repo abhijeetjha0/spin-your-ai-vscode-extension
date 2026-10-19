@@ -165,4 +165,31 @@ describe('WorkspaceService', () => {
         await WorkspaceService.applyWrite('edit.ts', editDiff.newContent);
         assert.strictEqual(global.__vscodeMockState.files.get(fullPath), editDiff.newContent);
     });
+
+    it('searches files across the workspace accurately', async () => {
+        // Empty query
+        const emptyQueryRes = await WorkspaceService.searchFiles('');
+        assert.strictEqual(emptyQueryRes, 'Empty search query provided.');
+
+        // Setup files in mock state
+        global.__vscodeMockState.files.set('/test/workspace/src/auth.ts', 'export function login() {\n  const token = "auth-token-xyz";\n  return token;\n}');
+        global.__vscodeMockState.files.set('/test/workspace/src/api.ts', 'import { login } from "./auth";\n// Call login function');
+        global.__vscodeMockState.files.set('/test/workspace/docs/readme.md', '# Documentation\nAuthentication uses token mechanism.');
+
+        // Search for 'login'
+        const matchRes = await WorkspaceService.searchFiles('login');
+        assert.ok(matchRes.includes('Found 3 match(es) for "login":'));
+        assert.ok(matchRes.includes('src/auth.ts:1: export function login() {'));
+        assert.ok(matchRes.includes('src/api.ts:1: import { login } from "./auth";'));
+        assert.ok(matchRes.includes('src/api.ts:2: // Call login function'));
+
+        // Search with no matches
+        const noMatchRes = await WorkspaceService.searchFiles('non_existent_symbol');
+        assert.strictEqual(noMatchRes, 'No matches found for "non_existent_symbol".');
+
+        // Search with maxResults
+        const limitedRes = await WorkspaceService.searchFiles('login', undefined, 1);
+        assert.ok(limitedRes.includes('Found 1 match(es) for "login":'));
+    });
 });
+

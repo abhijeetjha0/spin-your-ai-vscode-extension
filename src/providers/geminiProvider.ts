@@ -56,6 +56,7 @@ export class GeminiProvider extends BaseProvider {
         const systemInstruction = messages.filter(m => m.role === 'system').map(m => m.content).join('\n');
         const currentContents: any[] = [...contents];
         let toolCallCount = 0;
+        let totalGeneratedContent = 0;
 
         while (true) {
             const body: any = { contents: currentContents };
@@ -128,28 +129,38 @@ export class GeminiProvider extends BaseProvider {
             const modelParts: any[] = [];
 
             for await (const data of stream) {
+                let parsed: any;
                 try {
-                    const parsed = JSON.parse(data);
-                    const parts = parsed.candidates?.[0]?.content?.parts || [];
-                    for (const part of parts) {
-                        // Preserve exact parts (including thought_signature) for multi-turn echo
-                        modelParts.push(part);
-                        if (part.text) {
-                            yield { text: part.text, done: false };
-                        }
-                        if (part.functionCall) {
-                            functionCalls.push(part.functionCall);
-                        }
-                    }
+                    parsed = JSON.parse(data);
                 } catch (e) {
                     // Ignore parse errors on malformed SSE chunks
+                    continue;
+                }
+
+                if (parsed.error) {
+                    const errMsg = parsed.error.message || (typeof parsed.error === 'string' ? parsed.error : JSON.stringify(parsed.error));
+                    throw new Error(errMsg);
+                }
+
+                const parts = parsed.candidates?.[0]?.content?.parts || [];
+                for (const part of parts) {
+                    // Preserve exact parts (including thought_signature) for multi-turn echo
+                    modelParts.push(part);
+                    if (part.text) {
+                        totalGeneratedContent += part.text.length;
+                        yield { text: part.text, done: false };
+                    }
+                    if (part.functionCall) {
+                        functionCalls.push(part.functionCall);
+                    }
                 }
             }
 
             if (functionCalls.length > 0) {
                 toolCallCount++;
-                if (toolCallCount > 50) {
-                    throw new Error('Too many sequential tool calls (>50). The model may be stuck in a loop.');
+                if (toolCallCount > 25) {
+                    yield { text: `\n\n> <span class="material-symbols-outlined" style="font-size:16px;vertical-align:-3px;color:#f59e0b">warning</span> *Reached sequential tool call safety limit (25 turns). Stopping autonomous loop.*`, done: false };
+                    break;
                 }
 
                 // Echo the model's exact generated parts back (required by Gemini multi-turn API)
@@ -167,10 +178,19 @@ export class GeminiProvider extends BaseProvider {
                     } catch (err: any) {
                         result = { error: err.message };
                     }
+
+                    let responsePayload = typeof result === 'object' && result !== null ? result : { result };
+                    const strRep = JSON.stringify(responsePayload);
+                    if (strRep.length > 8000) {
+                        responsePayload = {
+                            result: (typeof result === 'string' ? result.substring(0, 8000) : strRep.substring(0, 8000)) + '\n... [Remaining output truncated to protect context window]'
+                        };
+                    }
+
                     functionResponses.push({
                         functionResponse: {
                             name: call.name,
-                            response: typeof result === 'object' && result !== null ? result : { result }
+                            response: responsePayload
                         }
                     });
                 }
@@ -185,6 +205,10 @@ export class GeminiProvider extends BaseProvider {
             }
 
             break;
+        }
+
+        if (toolCallCount > 0 && totalGeneratedContent === 0) {
+            yield { text: `\n\n> <span class="material-symbols-outlined" style="font-size:16px;vertical-align:-3px;color:#94a3b8">info</span> *Completed ${toolCallCount} tool execution(s). Model finished without additional commentary.*`, done: false };
         }
 
         yield { text: '', done: true };

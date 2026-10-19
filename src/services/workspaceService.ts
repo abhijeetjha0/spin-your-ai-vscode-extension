@@ -185,6 +185,57 @@ export class WorkspaceService {
     }
 
     /**
+     * Searches for a text query or pattern across workspace files.
+     */
+    public static async searchFiles(query: string, filePattern?: string, maxResults = 30): Promise<string> {
+        if (!query || query.trim() === '') {
+            return 'Empty search query provided.';
+        }
+
+        const includePattern = filePattern && filePattern.trim() ? filePattern.trim() : '**/*';
+        const excludePattern = '{**/node_modules/**,**/.git/**,**/dist/**,**/out/**,**/.vscode/**}';
+        const files = await vscode.workspace.findFiles(includePattern, excludePattern, 200);
+
+        if (!files || files.length === 0) {
+            return `No files found matching pattern "${includePattern}".`;
+        }
+
+        const matches: string[] = [];
+        const root = this.getRootUri();
+        const rootPath = root ? root.fsPath : '';
+        const lowerQuery = query.toLowerCase();
+
+        for (const fileUri of files) {
+            if (matches.length >= maxResults) break;
+            try {
+                const raw = await vscode.workspace.fs.readFile(fileUri);
+                if (raw.length > 500000) continue; // Skip large binary/data files > 500KB
+                const content = Buffer.from(raw).toString('utf8');
+                if (!content.toLowerCase().includes(lowerQuery)) continue;
+
+                const relPath = rootPath ? path.relative(rootPath, fileUri.fsPath) : fileUri.fsPath;
+                const lines = content.split('\n');
+
+                for (let i = 0; i < lines.length; i++) {
+                    if (matches.length >= maxResults) break;
+                    if (lines[i].toLowerCase().includes(lowerQuery)) {
+                        const snippet = lines[i].trim().substring(0, 140);
+                        matches.push(`${relPath}:${i + 1}: ${snippet}`);
+                    }
+                }
+            } catch {
+                // Ignore unreadable or locked files
+            }
+        }
+
+        if (matches.length === 0) {
+            return `No matches found for "${query}".`;
+        }
+
+        return `Found ${matches.length} match(es) for "${query}":\n` + matches.join('\n');
+    }
+
+    /**
      * Prepares diff information for a file creation or overwrite.
      */
     public static async prepareWriteDiff(targetPath: string, newContent: string): Promise<FileDiffInfo> {

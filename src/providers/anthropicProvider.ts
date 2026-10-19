@@ -38,6 +38,7 @@ export class AnthropicProvider extends BaseProvider {
             content: m.content
         }));
         let toolCallCount = 0;
+        let totalGeneratedContent = 0;
 
         while (true) {
             const body: any = {
@@ -71,34 +72,45 @@ export class AnthropicProvider extends BaseProvider {
             let currentBlockIndex = -1;
 
             for await (const data of stream) {
+                let parsed: any;
                 try {
-                    const parsed = JSON.parse(data);
-                    if (parsed.type === 'content_block_start') {
-                        currentBlockIndex = parsed.index;
-                        if (parsed.content_block?.type === 'tool_use') {
-                            toolCalls[currentBlockIndex] = {
-                                id: parsed.content_block.id,
-                                name: parsed.content_block.name,
-                                inputJson: ''
-                            };
-                        }
-                    } else if (parsed.type === 'content_block_delta') {
-                        if (parsed.delta?.text) {
-                            yield { text: parsed.delta.text, done: false };
-                        } else if (parsed.delta?.partial_json && toolCalls[currentBlockIndex]) {
-                            toolCalls[currentBlockIndex].inputJson += parsed.delta.partial_json;
-                        }
-                    }
+                    parsed = JSON.parse(data);
                 } catch (e) {
                     // Ignore parse errors on malformed chunks
+                    continue;
+                }
+
+                if (parsed.type === 'error' || parsed.error) {
+                    const err = parsed.error || parsed;
+                    const errMsg = err.message || (typeof err === 'string' ? err : JSON.stringify(err));
+                    throw new Error(errMsg);
+                }
+
+                if (parsed.type === 'content_block_start') {
+                    currentBlockIndex = parsed.index;
+                    if (parsed.content_block?.type === 'tool_use') {
+                        toolCalls[currentBlockIndex] = {
+                            id: parsed.content_block.id,
+                            name: parsed.content_block.name,
+                            inputJson: ''
+                        };
+                    }
+                } else if (parsed.type === 'content_block_delta') {
+                    if (parsed.delta?.text) {
+                        totalGeneratedContent += parsed.delta.text.length;
+                        yield { text: parsed.delta.text, done: false };
+                    } else if (parsed.delta?.partial_json && toolCalls[currentBlockIndex]) {
+                        toolCalls[currentBlockIndex].inputJson += parsed.delta.partial_json;
+                    }
                 }
             }
 
             const toolCallList = Object.values(toolCalls);
             if (toolCallList.length > 0) {
                 toolCallCount++;
-                if (toolCallCount > 50) {
-                    throw new Error('Too many sequential tool calls (>50). The model may be stuck in a loop.');
+                if (toolCallCount > 25) {
+                    yield { text: `\n\n> <span class="material-symbols-outlined" style="font-size:16px;vertical-align:-3px;color:#f59e0b">warning</span> *Reached sequential tool call safety limit (25 turns). Stopping autonomous loop.*`, done: false };
+                    break;
                 }
 
                 const assistantContent: any[] = [];
@@ -122,10 +134,15 @@ export class AnthropicProvider extends BaseProvider {
                         result = `Error: ${err.message}`;
                     }
 
+                    let contentStr = typeof result === 'string' ? result : JSON.stringify(result);
+                    if (contentStr.length > 8000) {
+                        contentStr = contentStr.substring(0, 8000) + '\n... [Remaining output truncated to protect context window]';
+                    }
+
                     toolResults.push({
                         type: 'tool_result',
                         tool_use_id: tc.id,
-                        content: typeof result === 'string' ? result : JSON.stringify(result)
+                        content: contentStr
                     });
                 }
 
@@ -143,6 +160,10 @@ export class AnthropicProvider extends BaseProvider {
             }
 
             break;
+        }
+
+        if (toolCallCount > 0 && totalGeneratedContent === 0) {
+            yield { text: `\n\n> <span class="material-symbols-outlined" style="font-size:16px;vertical-align:-3px;color:#94a3b8">info</span> *Completed ${toolCallCount} tool execution(s). Model finished without additional commentary.*`, done: false };
         }
         
         yield { text: '', done: true };

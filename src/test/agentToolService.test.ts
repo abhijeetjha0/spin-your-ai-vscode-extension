@@ -16,10 +16,11 @@ describe('AgentToolService', () => {
 
     it('returns built-in workspace tool schemas', () => {
         const tools = AgentToolService.getToolDefinitions();
-        assert.strictEqual(tools.length, 5);
+        assert.strictEqual(tools.length, 6);
         const names = tools.map(t => t.function.name);
         assert.ok(names.includes('workspace_get_context'));
         assert.ok(names.includes('workspace_list_dir'));
+        assert.ok(names.includes('workspace_search_files'));
         assert.ok(names.includes('workspace_read_file'));
         assert.ok(names.includes('workspace_write_file'));
         assert.ok(names.includes('workspace_edit_file'));
@@ -27,9 +28,26 @@ describe('AgentToolService', () => {
 
     it('identifies agent tools accurately', () => {
         assert.strictEqual(AgentToolService.isAgentTool('workspace_read_file'), true);
+        assert.strictEqual(AgentToolService.isAgentTool('workspace_search_files'), true);
         assert.strictEqual(AgentToolService.isAgentTool('workspace_get_context'), true);
         assert.strictEqual(AgentToolService.isAgentTool('mcp_fetch'), false);
         assert.strictEqual(AgentToolService.isAgentTool('random_tool'), false);
+    });
+
+    it('executes workspace_search_files with query matching and validation', async () => {
+        await assert.rejects(
+            async () => AgentToolService.executeTool('workspace_search_files', {}),
+            /Missing required argument: "query"/
+        );
+
+        global.__vscodeMockState.files.set('/test/workspace/src/app.ts', 'const token = "secret123";\nconst hello = "world";');
+        const res = await AgentToolService.executeTool('workspace_search_files', { query: 'secret123' });
+        assert.strictEqual(res.query, 'secret123');
+        assert.ok(res.results.includes('Found 1 match'));
+        assert.ok(res.results.includes('src/app.ts:1: const token = "secret123";'));
+
+        const emptyRes = await AgentToolService.executeTool('workspace_search_files', { query: 'nonexistent' });
+        assert.ok(emptyRes.results.includes('No matches found for "nonexistent"'));
     });
 
     it('executes workspace_get_context and workspace_list_dir', async () => {
