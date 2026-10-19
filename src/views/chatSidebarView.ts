@@ -5,6 +5,9 @@ import { HelpPanel } from './helpPanel';
 import { Message } from '../types';
 import { ConfigService } from '../services/configService';
 import { McpService } from '../services/mcpService';
+import { WorkspaceService } from '../services/workspaceService';
+import { AgentToolService } from '../services/agentToolService';
+import { ContextCompactor } from '../services/contextCompactor';
 
 interface ChatHistoryItem {
     role: 'user' | 'assistant' | 'system';
@@ -17,6 +20,9 @@ interface ChatSession {
     title: string;
     createdAt: number;
     history: ChatHistoryItem[];
+    compactedSummary?: string;
+    compactedCount?: number;
+    savedTokens?: number;
 }
 
 export class ChatSidebarViewProvider implements vscode.WebviewViewProvider {
@@ -76,8 +82,20 @@ export class ChatSidebarViewProvider implements vscode.WebviewViewProvider {
         this.sendModels();
         this.restoreHistory();
 
+        // Connect built-in agent tool permission requests to this webview
+        AgentToolService.setPermissionHandler(async (req) => {
+            this.sendMessageToWebview({
+                type: 'toolPermissionRequest',
+                request: req
+            });
+            return true;
+        });
+
         webviewView.webview.onDidReceiveMessage(async (data) => {
             switch (data.type) {
+                case 'toolPermissionResponse':
+                    AgentToolService.resolvePermission(data.requestId, !!data.approved);
+                    break;
                 case 'sendMessage':
                     await this.handleSendMessage(
                         data.text,
@@ -109,6 +127,9 @@ export class ChatSidebarViewProvider implements vscode.WebviewViewProvider {
                     if (this._currentAbortController) {
                         this._currentAbortController.abort();
                     }
+                    break;
+                case 'compactContext':
+                    await this.handleCompactContext(data.providerId, data.modelId);
                     break;
                 case 'exportChat':
                     await this.exportChat();
@@ -145,12 +166,49 @@ export class ChatSidebarViewProvider implements vscode.WebviewViewProvider {
 
     private restoreHistory() {
         if (!this._view) { return; }
+        const currentSession = this._sessions.find(s => s.id === this._currentSessionId);
         this._view.webview.postMessage({
             type: 'restoreHistory',
             history: this.currentHistory,
             sessions: this._sessions,
-            currentSessionId: this._currentSessionId
+            currentSessionId: this._currentSessionId,
+            compactedSummary: currentSession?.compactedSummary,
+            compactedCount: currentSession?.compactedCount,
+            savedTokens: currentSession?.savedTokens
         });
+    }
+
+    private async handleCompactContext(providerId?: string, modelId?: string) {
+        if (!this._currentSessionId) {
+            this.sendMessageToWebview({ type: 'toast', message: 'No active session to compact.' });
+            return;
+        }
+
+        const session = this._sessions.find(s => s.id === this._currentSessionId);
+        if (!session || session.history.length <= ContextCompactor.PRESERVED_RECENT_TURNS) {
+            this.sendMessageToWebview({
+                type: 'toast',
+                message: `Need at least ${ContextCompactor.PRESERVED_RECENT_TURNS + 1} messages to compact context.`
+            });
+            return;
+        }
+
+        const provider = providerId ? ProviderRegistry.getProvider(providerId) : undefined;
+        const result = await ContextCompactor.compactHistory(session.history, provider, modelId);
+
+        if (result.compactedCount > 0) {
+            session.compactedSummary = result.summary;
+            session.compactedCount = result.compactedCount;
+            session.savedTokens = result.savedTokens;
+            await this.saveHistory();
+
+            this.sendMessageToWebview({
+                type: 'contextCompacted',
+                compactedCount: result.compactedCount,
+                savedTokens: result.savedTokens,
+                summary: result.summary
+            });
+        }
     }
 
     private clearHistory() {
@@ -267,8 +325,8 @@ export class ChatSidebarViewProvider implements vscode.WebviewViewProvider {
         }
         
         if (processedText.includes('@workspace')) {
-            const workspaceName = vscode.workspace.name || 'Workspace';
-            processedText = processedText.replace('@workspace', '') + `\n\n[Workspace context for ${workspaceName} included]`;
+            const workspaceContext = await WorkspaceService.getWorkspaceContext();
+            processedText = processedText.replace('@workspace', '') + `\n\n--- Workspace Context ---\n${workspaceContext}\n--- End Workspace Context ---`;
         }
 
         // Attachments text extraction for non-images
@@ -327,9 +385,48 @@ export class ChatSidebarViewProvider implements vscode.WebviewViewProvider {
                 messagesPayload.push({ role: 'system', content: systemMessage });
             }
 
-            // Include history (excluding the very last item which is the current raw message we just pushed)
-            for (let i = 0; i < history.length - 1; i++) {
-                messagesPayload.push({ role: history[i].role, content: history[i].text });
+            const session = this._sessions.find(s => s.id === this._currentSessionId);
+            const priorHistory = history.slice(0, history.length - 1);
+
+            // Context Compaction: Check if history is compacted or exceeds auto-compact threshold
+            if (session?.compactedSummary && session.compactedCount) {
+                messagesPayload.push({ role: 'system', content: session.compactedSummary });
+                for (let i = session.compactedCount; i < priorHistory.length; i++) {
+                    messagesPayload.push({ role: priorHistory[i].role, content: priorHistory[i].text });
+                }
+            } else if (
+                priorHistory.length >= ContextCompactor.AUTO_COMPACT_MIN_TURNS ||
+                ContextCompactor.estimateHistoryTokens(priorHistory) >= ContextCompactor.AUTO_COMPACT_TOKEN_THRESHOLD
+            ) {
+                const compaction = await ContextCompactor.compactHistory(priorHistory);
+                if (compaction.compactedCount > 0) {
+                    if (session) {
+                        session.compactedSummary = compaction.summary;
+                        session.compactedCount = compaction.compactedCount;
+                        session.savedTokens = compaction.savedTokens;
+                        await this.saveHistory();
+                    }
+
+                    messagesPayload.push({ role: 'system', content: compaction.summary });
+                    for (let i = compaction.compactedCount; i < priorHistory.length; i++) {
+                        messagesPayload.push({ role: priorHistory[i].role, content: priorHistory[i].text });
+                    }
+
+                    this.sendMessageToWebview({
+                        type: 'contextCompacted',
+                        compactedCount: compaction.compactedCount,
+                        savedTokens: compaction.savedTokens,
+                        summary: compaction.summary
+                    });
+                } else {
+                    for (let i = 0; i < priorHistory.length; i++) {
+                        messagesPayload.push({ role: priorHistory[i].role, content: priorHistory[i].text });
+                    }
+                }
+            } else {
+                for (let i = 0; i < priorHistory.length; i++) {
+                    messagesPayload.push({ role: priorHistory[i].role, content: priorHistory[i].text });
+                }
             }
 
             // Append the current message with fully processed text (includes context and attachments)
@@ -448,6 +545,7 @@ export class ChatSidebarViewProvider implements vscode.WebviewViewProvider {
                             </div>
                         </div>
                         <div class="header-actions">
+                            <button id="compact-btn" class="icon-btn" title="Compact Context (Save Tokens)"><span class="material-symbols-outlined">compress</span></button>
                             <button id="reload-models-btn" class="icon-btn" title="Reload Models"><span class="material-symbols-outlined">refresh</span></button>
                             <button id="export-chat-btn" class="icon-btn" title="Export Chat"><span class="material-symbols-outlined">download</span></button>
                             <button id="new-chat-btn" class="icon-btn" title="New Chat"><span class="material-symbols-outlined">add</span></button>

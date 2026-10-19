@@ -160,7 +160,7 @@ export class GeminiProvider extends BaseProvider {
 
                 const functionResponses: any[] = [];
                 for (const call of functionCalls) {
-                    yield { text: `\n\n> <span class="material-symbols-outlined" style="font-size:16px;vertical-align:-3px;color:#a78bfa">settings</span> *Executing MCP tool \`${call.name}\`...*\n\n`, done: false };
+                    yield { text: `\n\n> <span class="material-symbols-outlined" style="font-size:16px;vertical-align:-3px;color:#a78bfa">settings</span> *Executing tool \`${call.name}\`...*\n\n`, done: false };
                     let result: any;
                     try {
                         result = await McpService.executeTool(call.name, call.args || {});

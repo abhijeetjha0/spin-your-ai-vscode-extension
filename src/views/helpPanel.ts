@@ -187,7 +187,8 @@ export class HelpPanel {
           <li><strong>New Chat:</strong> Click the <strong>plus icon</strong> at the top right to start a fresh conversation.</li>
           <li><strong>Include Page Content:</strong> Toggle &ldquo;Include page content&rdquo; to automatically inject your active editor file into the prompt.</li>
           <li><strong>@file tag:</strong> Type <code>@file</code> anywhere in your message to inject your active editor file.</li>
-          <li><strong>@workspace tag:</strong> Type <code>@workspace</code> to include the workspace name in context.</li>
+          <li><strong>@workspace tag:</strong> Type <code>@workspace</code> to scan and inject your complete workspace directory tree and active file into context.</li>
+          <li><strong>Compact Context:</strong> Click the <strong>compress icon</strong> in the header toolbar to condense earlier turns into an executive summary, slashing token usage and latency just like Claude and ChatGPT.</li>
           <li><strong>Attachments:</strong> Click the paperclip icon to upload images, documents, or code files to send to multimodal models.</li>
           <li><strong>Stop Generation:</strong> Click the stop button to cancel a running response stream.</li>
           <li><strong>Code Actions:</strong> Right-click selected code in the editor and choose <strong>Spin Your AI: Explain Code</strong>, <strong>Refactor Code</strong>, or <strong>Fix Bug</strong>.</li>
@@ -233,11 +234,13 @@ export class HelpPanel {
       </section>
 
       <section class="help-section">
-        <h2>6. Model Context Protocol (MCP) &amp; Agents</h2>
-        <p>Spin Your AI supports agentic behavior via the Model Context Protocol (MCP).</p>
+        <h2>6. Model Context Protocol (MCP) &amp; Agent Tools</h2>
+        <p>Spin Your AI supports agentic behavior via built-in workspace tools and the Model Context Protocol (MCP).</p>
         <ul>
+          <li><strong>Workspace Agent Tools:</strong> Built-in tools allow capable models to inspect directory trees, read files, search files, and create or edit code.</li>
+          <li><strong>Strict Permission Prompting:</strong> The extension guarantees that no workspace file can be modified without explicit permission. When a model proposes a file write or edit, an interactive card with a unified diff preview appears with <strong>Approve</strong> and <strong>Reject</strong> buttons.</li>
           <li><strong>JSON Config:</strong> In Settings, use the <strong>MCP Servers</strong> JSON editor to configure your HTTP/SSE MCP servers (e.g., n8n-mcp).</li>
-          <li><strong>Tool Calling:</strong> When using capable models (OpenAI, Gemini, Anthropic), the model autonomously executes tools from your MCP servers during chat.</li>
+          <li><strong>Tool Calling:</strong> When using capable models (OpenAI, Gemini, Anthropic, Ollama Cloud, OpenRouter), the model autonomously executes tools from your MCP servers during chat.</li>
           <li><strong>Toggle:</strong> Use the enable/disable switch on the MCP card in Settings to turn tool calling on or off without losing your config.</li>
           <li><strong>Supported:</strong> Both HTTP/SSE endpoints (via URL) and STDIO servers (via <code>command</code>, e.g. <code>npx</code>) are supported.</li>
         </ul>

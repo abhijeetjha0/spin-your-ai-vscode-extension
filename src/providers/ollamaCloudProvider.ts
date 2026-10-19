@@ -4,14 +4,14 @@ import { HttpService } from '../utils/http';
 
 export class OllamaCloudProvider extends OpenAIProvider {
     constructor() {
-        super();
-        (this as any).config = {
+        super({
             id: 'ollamaCloud',
             name: 'Ollama Cloud',
             type: 'cloud',
             baseUrl: 'https://ollama.com/v1',
-            apiKeyRequired: true
-        };
+            apiKeyRequired: true,
+            supportsTools: true
+        });
     }
 
     async listModels(): Promise<ModelInfo[]> {

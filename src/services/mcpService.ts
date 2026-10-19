@@ -5,6 +5,7 @@ import * as child_process from 'child_process';
 import * as readline from 'readline';
 import { Logger } from '../utils/logger';
 import { HttpService } from '../utils/http';
+import { AgentToolService } from './agentToolService';
 
 export interface McpServerConfig {
     type?: string;          // 'http' | 'sse'
@@ -334,22 +335,26 @@ export class McpService {
     }
 
     public static async getActiveTools(): Promise<McpToolDefinition[]> {
-        if (!this.isEnabled()) {
-            return [];
-        }
-
         const now = Date.now();
         if (this.cachedTools && (now - this.cacheTimestamp) < this.CACHE_TTL_MS) {
             return this.cachedTools;
         }
 
-        const tools: McpToolDefinition[] = [];
+        const tools: McpToolDefinition[] = [...AgentToolService.getToolDefinitions()];
+
+        if (!this.isEnabled()) {
+            this.cachedTools = tools;
+            this.cacheTimestamp = now;
+            return tools;
+        }
 
         try {
             const raw = this.getRawConfig();
             const config: McpConfigFile = JSON.parse(raw);
             if (!config || !config.mcpServers) {
-                return [];
+                this.cachedTools = tools;
+                this.cacheTimestamp = now;
+                return tools;
             }
 
             for (const [serverKey, s] of Object.entries(config.mcpServers)) {
@@ -434,8 +439,12 @@ export class McpService {
     }
 
     public static async executeTool(toolName: string, args: any): Promise<any> {
+        if (AgentToolService.isAgentTool(toolName)) {
+            return await AgentToolService.executeTool(toolName, args);
+        }
+
         if (!toolName.startsWith('mcp_')) {
-            throw new Error(`Invalid tool name "${toolName}": Not an MCP tool.`);
+            throw new Error(`Invalid tool name "${toolName}": Not an MCP or Workspace tool.`);
         }
 
         const parts = toolName.split('__');

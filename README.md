@@ -6,7 +6,10 @@ Spin up AI models from your editor, powered by local AI, cloud frontiers, and Mo
 
 - **Multi-Provider Support**: Switch seamlessly between local models (Ollama, Hermes, OpenCode, OpenClaw), MCP servers, and cloud frontiers (OpenAI, Anthropic, Gemini, OpenRouter, OpenCode Zen, Hugging Face, Ollama Cloud).
 - **Sidebar Chat**: Native-feeling Webview chat interface with streaming responses, conversation history, and quick model reloads.
-- **Context Injection**: Use `@file` and `@workspace` to instantly feed relevant context to any LLM.
+- **Context Injection & Workspace Awareness**: Use `@file` to inject active document content, and `@workspace` to scan and feed your full directory tree and workspace hierarchy to any LLM.
+- **Built-in Workspace Agent Tools**: Tool-capable models (OpenAI, Gemini, Anthropic, Ollama Cloud, OpenRouter) can inspect files, list directories, and propose code changes.
+- **Strict Permission-First Control**: No files are modified without your consent. Proposed changes display an interactive unified diff preview with **Approve** and **Reject** buttons directly in the chat sidebar.
+- **Chat & Context Compaction**: Condense verbose earlier turns into an executive summary on demand or automatically, slashing token consumption and latency just like Claude, Gemini, and ChatGPT.
 - **Editor Integration**: Highlight code and right-click to Explain, Refactor, or Fix Bugs.
 - **Secure Key Storage**: API keys are encrypted in your OS native keychain (macOS Keychain, Windows Credential Manager, Linux Secret Service) via VS Code's `SecretStorage` API.
 - **Zero Config Local**: Connects directly to Ollama at `localhost:11434` out of the box.

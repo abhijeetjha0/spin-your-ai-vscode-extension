@@ -10,7 +10,8 @@ export class OpenRouterProvider extends BaseProvider {
             name: 'OpenRouter',
             type: 'aggregator',
             baseUrl: 'https://openrouter.ai/api/v1',
-            apiKeyRequired: true
+            apiKeyRequired: true,
+            supportsTools: true
         });
     }
 
@@ -120,7 +121,7 @@ export class OpenRouterProvider extends BaseProvider {
 
                 for (const tc of toolCalls) {
                     const toolName = tc.function.name;
-                    yield { text: `\n\n> <span class="material-symbols-outlined" style="font-size:16px;vertical-align:-3px;color:#a78bfa">settings</span> *Executing MCP tool \`${toolName}\`...*\n\n`, done: false };
+                    yield { text: `\n\n> <span class="material-symbols-outlined" style="font-size:16px;vertical-align:-3px;color:#a78bfa">settings</span> *Executing tool \`${toolName}\`...*\n\n`, done: false };
 
                     try {
                         const args = tc.function.arguments ? JSON.parse(tc.function.arguments) : {};

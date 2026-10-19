@@ -169,7 +169,9 @@
     "pretest": "npm run compile-tests && npm run compile && npm run lint",
     "check-types": "tsc --noEmit",
     "lint": "eslint src --ext ts",
-    "test": "vscode-test"
+    "test:unit": "mocha --exit -r test/setup.js 'out/test/**/*.test.js'",
+    "test:coverage": "npm run compile-tests && c8 --reporter=text --reporter=html mocha --exit -r test/setup.js 'out/test/**/*.test.js'",
+    "test": "npm run test:coverage"
   },
   "devDependencies": {
     "@types/vscode": "^1.85.0",

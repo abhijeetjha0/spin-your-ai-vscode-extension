@@ -495,3 +495,213 @@ body {
     transform: rotate(360deg);
   }
 }
+
+/* Permission Prompt Card */
+.permission-prompt-card {
+  background: var(--panel-bg);
+  border: 1px solid var(--border-color);
+  margin: 12px 0;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  animation: slideUp 0.15s ease-out;
+}
+
+.permission-prompt-card.perm-resolved {
+  opacity: 0.85;
+}
+
+.perm-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-bottom: 1px solid var(--border-color);
+  padding-bottom: 8px;
+}
+
+.perm-icon {
+  font-size: 18px;
+  color: #f59e0b;
+}
+
+.perm-title {
+  font-size: 12px;
+  font-weight: bold;
+  letter-spacing: 0.5px;
+  color: var(--text-main);
+  text-transform: uppercase;
+}
+
+.perm-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  margin-bottom: 4px;
+}
+
+.perm-file-badge {
+  background: #000;
+  border: 1px solid var(--border-color);
+  padding: 2px 6px;
+  font-size: 11px;
+  font-weight: bold;
+  color: #7dd3fc;
+}
+
+.perm-file-path {
+  color: var(--text-main);
+  font-family: var(--font-mono);
+  word-break: break-all;
+}
+
+.perm-diff-container {
+  background: #000;
+  border: 1px solid var(--border-color);
+  padding: 8px;
+  max-height: 240px;
+  overflow-y: auto;
+  font-size: 11px;
+  line-height: 1.4;
+  font-family: var(--font-mono);
+}
+
+.perm-diff-container pre {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.diff-line-add {
+  color: #4ade80;
+  background: rgba(34, 197, 94, 0.1);
+  display: block;
+}
+
+.diff-line-del {
+  color: #f87171;
+  background: rgba(239, 68, 68, 0.1);
+  display: block;
+}
+
+.diff-line-hunk {
+  color: #38bdf8;
+  display: block;
+  font-weight: bold;
+}
+
+.diff-line-ctx {
+  color: var(--text-muted);
+  display: block;
+}
+
+.perm-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.perm-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  cursor: pointer;
+  background: #000;
+  border: 1px solid var(--border-color);
+  color: var(--text-main);
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.perm-btn .material-symbols-outlined {
+  font-size: 16px;
+}
+
+.perm-approve-btn:hover:not(:disabled) {
+  border-color: #22c55e;
+  background: rgba(34, 197, 94, 0.15);
+  color: #4ade80;
+}
+
+.perm-reject-btn:hover:not(:disabled) {
+  border-color: #ef4444;
+  background: rgba(239, 68, 68, 0.15);
+  color: #f87171;
+}
+
+.perm-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.perm-status-badge {
+  font-size: 12px;
+  font-weight: bold;
+  padding: 4px 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.perm-status-approved {
+  color: #4ade80;
+}
+
+.perm-status-rejected {
+  color: #f87171;
+}
+
+/* Context Compaction Badge */
+.context-compact-badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: var(--panel-bg);
+  border: 1px dashed #7dd3fc;
+  padding: 8px 12px;
+  margin: 12px 0;
+  font-size: 11px;
+  font-family: var(--font-mono);
+  color: #7dd3fc;
+  animation: slideUp 0.15s ease-out;
+}
+
+.context-compact-badge .compact-icon {
+  font-size: 16px;
+  color: #7dd3fc;
+}
+
+.context-compact-badge .compact-text {
+  font-weight: bold;
+  letter-spacing: 0.3px;
+}
+
+/* Toast */
+.chat-toast {
+  position: fixed;
+  bottom: 80px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #000;
+  border: 1px solid var(--border-color);
+  color: var(--text-main);
+  padding: 8px 14px;
+  font-size: 12px;
+  font-family: var(--font-mono);
+  z-index: 2000;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease-in-out;
+}
+
+.chat-toast.visible {
+  opacity: 1;
+}
+
+

@@ -7,6 +7,7 @@ const stopBtn = document.getElementById('stop-btn');
 const optionsBtn = document.getElementById('options-btn');
 const helpBtn = document.getElementById('help-btn');
 const exportChatBtn = document.getElementById('export-chat-btn');
+const compactBtn = document.getElementById('compact-btn');
 const reloadModelsBtn = document.getElementById('reload-models-btn');
 const newChatBtn = document.getElementById('new-chat-btn');
 const contextToggle = document.getElementById('include-page-context');
@@ -55,6 +56,16 @@ function init() {
 
     exportChatBtn?.addEventListener('click', () => {
         vscode.postMessage({ type: 'exportChat' });
+    });
+
+    compactBtn?.addEventListener('click', () => {
+        if (isGenerating) return;
+        const [providerId, modelId] = (selectedModelValue || '').split('::');
+        vscode.postMessage({
+            type: 'compactContext',
+            providerId,
+            modelId
+        });
     });
 
     reloadModelsBtn?.addEventListener('click', () => {
@@ -154,6 +165,15 @@ window.addEventListener('message', event => {
                 renderSessionsList();
             }
             renderHistory(msg.history);
+            if (msg.compactedCount) {
+                renderCompactedBadge(msg.compactedCount, msg.savedTokens, true);
+            }
+            break;
+        case 'contextCompacted':
+            renderCompactedBadge(msg.compactedCount, msg.savedTokens);
+            break;
+        case 'toast':
+            showToast(msg.message);
             break;
         case 'updateSessions':
             allSessions = msg.sessions || [];
@@ -165,6 +185,9 @@ window.addEventListener('message', event => {
             break;
         case 'error':
             handleStreamChunk('', true, msg.message);
+            break;
+        case 'toolPermissionRequest':
+            handleToolPermissionRequest(msg.request);
             break;
         case 'populateInput':
             chatInput.value = msg.text;
@@ -442,6 +465,116 @@ function appendMessage(sender, text, className, id = null) {
     return div;
 }
 
+function handleToolPermissionRequest(req) {
+    if (!req) return;
+
+    const card = document.createElement('div');
+    card.className = 'permission-prompt-card';
+    card.id = `perm-${req.requestId}`;
+
+    const diffHtml = formatDiffForDisplay(req.diffText);
+
+    card.innerHTML = `
+        <div class="perm-header">
+            <span class="material-symbols-outlined perm-icon">security</span>
+            <span class="perm-title">PERMISSION REQUEST: ${req.toolName}</span>
+        </div>
+        <div class="perm-body">
+            <div class="perm-meta">
+                <span class="perm-file-badge">${req.isNew ? 'CREATE' : 'MODIFY'}</span>
+                <span class="perm-file-path">${req.filePath}</span>
+            </div>
+            <div class="perm-diff-container">
+                <pre><code>${diffHtml}</code></pre>
+            </div>
+        </div>
+        <div class="perm-actions">
+            <button class="perm-btn perm-reject-btn" data-req-id="${req.requestId}">
+                <span class="material-symbols-outlined">close</span> Reject
+            </button>
+            <button class="perm-btn perm-approve-btn" data-req-id="${req.requestId}">
+                <span class="material-symbols-outlined">check</span> Approve
+            </button>
+        </div>
+    `;
+
+    chatContainer.appendChild(card);
+    chatContainer.scrollTop = chatContainer.scrollHeight;
+
+    const approveBtn = card.querySelector('.perm-approve-btn');
+    const rejectBtn = card.querySelector('.perm-reject-btn');
+    const actionsDiv = card.querySelector('.perm-actions');
+
+    const respond = (approved) => {
+        card.classList.add('perm-resolved');
+        approveBtn.disabled = true;
+        rejectBtn.disabled = true;
+
+        actionsDiv.innerHTML = approved
+            ? '<span class="perm-status-badge perm-status-approved"><span class="material-symbols-outlined">check_circle</span> Approved by user</span>'
+            : '<span class="perm-status-badge perm-status-rejected"><span class="material-symbols-outlined">cancel</span> Rejected by user</span>';
+
+        vscode.postMessage({
+            type: 'toolPermissionResponse',
+            requestId: req.requestId,
+            approved
+        });
+    };
+
+    approveBtn.addEventListener('click', () => respond(true));
+    rejectBtn.addEventListener('click', () => respond(false));
+}
+
+function formatDiffForDisplay(diffText) {
+    if (!diffText) return '';
+    const lines = diffText.split('\n');
+    return lines.map(line => {
+        const escaped = line.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        if (line.startsWith('+')) {
+            return `<span class="diff-line-add">${escaped}</span>`;
+        } else if (line.startsWith('-')) {
+            return `<span class="diff-line-del">${escaped}</span>`;
+        } else if (line.startsWith('@')) {
+            return `<span class="diff-line-hunk">${escaped}</span>`;
+        } else {
+            return `<span class="diff-line-ctx">${escaped}</span>`;
+        }
+    }).join('');
+}
+
+function renderCompactedBadge(compactedCount, savedTokens, isRestoring = false) {
+    const existing = document.getElementById('compact-badge');
+    if (existing) {
+        existing.remove();
+    }
+
+    const badge = document.createElement('div');
+    badge.id = 'compact-badge';
+    badge.className = 'context-compact-badge';
+    badge.innerHTML = `
+        <span class="material-symbols-outlined compact-icon">compress</span>
+        <span class="compact-text">Context Compacted: Condensed ${compactedCount} earlier turns (Saved ~${savedTokens} tokens)</span>
+    `;
+
+    chatContainer.appendChild(badge);
+    if (!isRestoring) {
+        chatContainer.scrollTop = chatContainer.scrollHeight;
+    }
+}
+
+function showToast(message) {
+    let toast = document.getElementById('chat-toast');
+    if (!toast) {
+        toast = document.createElement('div');
+        toast.id = 'chat-toast';
+        toast.className = 'chat-toast';
+        document.body.appendChild(toast);
+    }
+    toast.textContent = message;
+    toast.classList.add('visible');
+    setTimeout(() => toast.classList.remove('visible'), 3000);
+}
+
 function handleStreamChunk(chunk, done, error) {
     if (!isGenerating) return;
 
@@ -605,9 +738,12 @@ function renderMarkdown(text) {
         return '';
     });
 
-    // 3. Extract MCP Tool logs
-    text = text.replace(/(?:\n\n)?>\s*<span[^>]*>settings<\/span>\s*\*Executing MCP tool `([^`]+)`\.\.\.\*(?:\n\n)?/gi, (match, toolName) => {
-        midProcessItems.push(`<div style="margin-bottom: 4px;"><span class="material-symbols-outlined" style="font-size:14px;vertical-align:middle;margin-right:4px;">build</span>Executing MCP Tool: <code>${toolName}</code></div>`);
+    // 3. Extract Tool logs (MCP and Workspace Agent tools)
+    text = text.replace(/(?:\n\n)?>\s*<span[^>]*>settings<\/span>\s*\*Executing (?:MCP )?tool `([^`]+)`\.\.\.\*(?:\n\n)?/gi, (match, toolName) => {
+        const isAgent = toolName.startsWith('workspace_');
+        const icon = isAgent ? 'folder_open' : 'build';
+        const label = isAgent ? 'Executing Workspace Tool' : 'Executing MCP Tool';
+        midProcessItems.push(`<div style="margin-bottom: 4px;"><span class="material-symbols-outlined" style="font-size:14px;vertical-align:middle;margin-right:4px;">${icon}</span>${label}: <code>${toolName}</code></div>`);
         return '';
     });
 
