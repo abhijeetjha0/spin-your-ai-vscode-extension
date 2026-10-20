@@ -15,6 +15,229 @@ const attachBtn = document.getElementById('attach-btn');
 const fileInput = document.getElementById('file-input');
 const attachmentPreview = document.getElementById('attachment-preview');
 
+// Slash commands elements & state
+const slashPopover = document.getElementById('slash-commands-popover');
+const slashList = document.getElementById('slash-commands-list');
+let activeSlashIndex = 0;
+let currentMatchingSlashCommands = [];
+let currentSlashQueryMeta = null;
+let lastSlashRequestId = 0;
+
+const BASE_SLASH_COMMANDS = [
+    { name: 'plan', command: '/plan', label: 'Plan', icon: 'architecture', category: 'Prompt', description: 'Generate a detailed, step-by-step implementation plan for a task', type: 'prompt', template: 'Please outline a comprehensive, step-by-step implementation plan for: ' },
+    { name: 'explain', command: '/explain', label: 'Explain', icon: 'psychology', category: 'Prompt', description: 'Explain active selection, code, or context in depth', type: 'prompt', template: 'Please explain the following code and concepts in detail:\n\n' },
+    { name: 'refactor', command: '/refactor', label: 'Refactor', icon: 'auto_fix_high', category: 'Prompt', description: 'Refactor code for better readability, structure, and performance', type: 'prompt', template: 'Please refactor the following code for better readability and performance:\n\n' },
+    { name: 'fix', command: '/fix', label: 'Fix', icon: 'bug_report', category: 'Prompt', description: 'Diagnose syntax, logic, or runtime issues and provide verified solutions', type: 'prompt', template: 'Please diagnose and fix the issue in the following:\n\n' },
+    { name: 'test', command: '/test', label: 'Test', icon: 'science', category: 'Prompt', description: 'Generate comprehensive unit tests, edge cases, and assertion suites', type: 'prompt', template: 'Please write comprehensive unit tests and edge cases for the following:\n\n' },
+    { name: 'summarize', command: '/summarize', label: 'Summarize', icon: 'summarize', category: 'Prompt', description: 'Summarize the active document, file, or discussion concisely', type: 'prompt', template: 'Please provide a concise, structured summary of the current context:\n\n' },
+    { name: 'search', command: '/search', label: 'Search', icon: 'search', category: 'Prompt', description: 'Search workspace files, code symbols, or context', type: 'prompt', template: 'Please search the workspace for: ' },
+    { name: 'subagent', command: '/subagent', label: 'Subagent', icon: 'account_tree', category: 'Multi-Agent', description: 'Spin specialized autonomous sub-agent(s) with dedicated roles and tasks', type: 'prompt', template: 'Can you spin up specialized sub-agents from different perspectives to analyze: ' },
+    { name: 'file', command: '/file', label: 'File Scope', icon: 'draft', category: 'Scope', description: 'Focus and attach active file content', type: 'prompt', template: '@file ' },
+    { name: 'workspace', command: '/workspace', label: 'Workspace Scope', icon: 'folder', category: 'Scope', description: 'Inject workspace file structure and project context', type: 'prompt', template: '@workspace ' },
+    { name: 'history', command: '/history', label: 'Chat History', icon: 'history', category: 'Action', description: 'Open chat sessions and conversation history', type: 'action', actionId: 'history' },
+    { name: 'compact', command: '/compact', label: 'Compact Context', icon: 'compress', category: 'Action', description: 'Trigger manual context compaction to compress history and save tokens', type: 'action', actionId: 'compact' },
+    { name: 'refresh', command: '/refresh', label: 'Refresh Models & Skills', icon: 'refresh', category: 'Action', description: 'Reload AI models and refresh workspace skills', type: 'action', actionId: 'refresh' },
+    { name: 'clear', command: '/clear', label: 'Clear Chat', icon: 'delete_sweep', category: 'Action', description: 'Reset conversation history and clear active sub-agents', type: 'action', actionId: 'clear' },
+    { name: 'help', command: '/help', label: 'Help', icon: 'help', category: 'Action', description: 'Display commands reference manual and keyboard shortcuts', type: 'action', actionId: 'help' }
+];
+
+let dynamicWorkspaceSkills = [];
+
+function extractSlashQuery(text, cursorPos) {
+    if (typeof text !== 'string' || cursorPos <= 0) {
+        return { isMatch: false };
+    }
+    const textBeforeCursor = text.slice(0, cursorPos);
+    const match = textBeforeCursor.match(/(?:^|\s)\/([a-zA-Z0-9_-]*)$/);
+    if (!match) return { isMatch: false };
+    const query = match[1];
+    const slashIndex = textBeforeCursor.lastIndexOf('/' + query);
+    return { isMatch: true, query, slashIndex, endIndex: cursorPos };
+}
+
+function deduplicateCommands(commands) {
+    if (!Array.isArray(commands)) return [];
+    const seen = new Set();
+    const result = [];
+    for (const cmd of commands) {
+        if (!cmd || !cmd.command) continue;
+        const key = cmd.command.toLowerCase().trim();
+        if (!seen.has(key)) {
+            seen.add(key);
+            result.push(cmd);
+        }
+    }
+    return result;
+}
+
+function filterLocalSlashCommands(query) {
+    const all = deduplicateCommands([...BASE_SLASH_COMMANDS, ...dynamicWorkspaceSkills]);
+    const normalized = (query || '').replace(/^\//, '').trim().toLowerCase();
+    if (!normalized) return all;
+
+    const matches = all.filter(cmd =>
+        (cmd.name && cmd.name.toLowerCase().includes(normalized)) ||
+        (cmd.command && cmd.command.toLowerCase().includes(normalized)) ||
+        (cmd.label && cmd.label.toLowerCase().includes(normalized)) ||
+        (cmd.description && cmd.description.toLowerCase().includes(normalized)) ||
+        (cmd.category && cmd.category.toLowerCase().includes(normalized))
+    );
+
+    return matches.sort((a, b) => {
+        const aCmd = (a.command || '').toLowerCase().replace(/^\//, '');
+        const bCmd = (b.command || '').toLowerCase().replace(/^\//, '');
+        const aExact = aCmd === normalized ? 0 : 1;
+        const bExact = bCmd === normalized ? 0 : 1;
+        if (aExact !== bExact) return aExact - bExact;
+
+        const aStarts = aCmd.startsWith(normalized) ? 0 : 1;
+        const bStarts = bCmd.startsWith(normalized) ? 0 : 1;
+        if (aStarts !== bStarts) return aStarts - bStarts;
+
+        return aCmd.localeCompare(bCmd);
+    });
+}
+
+function renderSlashPopover(commands) {
+    if (!slashList || !slashPopover) return;
+    currentMatchingSlashCommands = deduplicateCommands(commands);
+    slashList.innerHTML = '';
+
+    if (currentMatchingSlashCommands.length === 0) {
+        const emptyItem = document.createElement('div');
+        emptyItem.className = 'slash-command-item';
+        emptyItem.style.color = 'var(--text-muted, #94a3b8)';
+        emptyItem.style.cursor = 'default';
+        emptyItem.style.padding = '8px 10px';
+        emptyItem.textContent = 'No matching commands or skills';
+        slashList.appendChild(emptyItem);
+        slashPopover.classList.remove('hidden');
+        return;
+    }
+
+    if (activeSlashIndex >= currentMatchingSlashCommands.length) {
+        activeSlashIndex = 0;
+    }
+
+    currentMatchingSlashCommands.forEach((cmd, idx) => {
+        const item = document.createElement('div');
+        item.className = `slash-command-item ${idx === activeSlashIndex ? 'active' : ''}`;
+        item.dataset.index = idx;
+
+        const catClass = cmd.category === 'Skill' ? 'cat-skill' : (cmd.category === 'Action' ? 'cat-action' : '');
+
+        item.innerHTML = `
+            <span class="material-symbols-outlined slash-command-icon">${cmd.icon || 'terminal'}</span>
+            <div class="slash-command-info">
+                <div class="slash-command-title">
+                    <span>${cmd.command}</span>
+                    <span class="slash-command-badge ${catClass}">${cmd.category}</span>
+                </div>
+                <div class="slash-command-desc">${cmd.description || ''}</div>
+            </div>
+        `;
+
+        item.addEventListener('mouseenter', () => {
+            activeSlashIndex = idx;
+            updateSlashSelection();
+        });
+
+        item.addEventListener('mousedown', (e) => {
+            e.preventDefault();
+            executeSlashCommand(cmd);
+        });
+
+        slashList.appendChild(item);
+    });
+
+    slashPopover.classList.remove('hidden');
+    scrollSlashActiveIntoView();
+}
+
+function updateSlashSelection() {
+    if (!slashList) return;
+    const items = slashList.querySelectorAll('.slash-command-item');
+    items.forEach((item, idx) => {
+        if (idx === activeSlashIndex) {
+            item.classList.add('active');
+        } else {
+            item.classList.remove('active');
+        }
+    });
+    scrollSlashActiveIntoView();
+}
+
+function scrollSlashActiveIntoView() {
+    if (!slashList) return;
+    const activeItem = slashList.children[activeSlashIndex];
+    if (activeItem && activeItem.scrollIntoView) {
+        activeItem.scrollIntoView({ block: 'nearest' });
+    }
+}
+
+function hideSlashPopover() {
+    if (slashPopover) {
+        slashPopover.classList.add('hidden');
+    }
+    currentMatchingSlashCommands = [];
+    currentSlashQueryMeta = null;
+    activeSlashIndex = 0;
+}
+
+function executeSlashCommand(cmd) {
+    if (!cmd) return;
+
+    if (cmd.type === 'action') {
+        if (currentSlashQueryMeta && currentSlashQueryMeta.isMatch) {
+            const val = chatInput.value;
+            const prefix = val.slice(0, currentSlashQueryMeta.slashIndex);
+            const suffix = val.slice(currentSlashQueryMeta.endIndex);
+            chatInput.value = (prefix + suffix).trim();
+        } else {
+            chatInput.value = '';
+        }
+        chatInput.style.height = 'auto';
+        hideSlashPopover();
+
+        const [providerId, modelId] = (selectedModelValue || '').split('::');
+        vscode.postMessage({
+            type: 'executeSlashAction',
+            actionId: cmd.actionId,
+            providerId,
+            modelId
+        });
+        chatInput.focus();
+        return;
+    }
+
+    const templateToInsert = cmd.template || `${cmd.command} `;
+    if (currentSlashQueryMeta && currentSlashQueryMeta.isMatch) {
+        const val = chatInput.value;
+        const prefix = val.slice(0, currentSlashQueryMeta.slashIndex);
+        const suffix = val.slice(currentSlashQueryMeta.endIndex);
+        chatInput.value = prefix + templateToInsert + suffix;
+        const newCursorPos = (prefix + templateToInsert).length;
+        chatInput.setSelectionRange(newCursorPos, newCursorPos);
+    } else {
+        chatInput.value = templateToInsert;
+    }
+
+    chatInput.style.height = 'auto';
+    chatInput.style.height = Math.min(chatInput.scrollHeight, 150) + 'px';
+    hideSlashPopover();
+    chatInput.focus();
+}
+
+// Sub-agents monitor elements & state
+const subagentsStatusBtn = document.getElementById('subagents-status-btn');
+const subagentsCountText = document.getElementById('subagents-count-text');
+const subagentsModal = document.getElementById('subagents-modal');
+const closeSubagentsBtn = document.getElementById('close-subagents-btn');
+const clearSubagentsBtn = document.getElementById('clear-subagents-btn');
+const subagentsListContainer = document.getElementById('subagents-list-container');
+let currentSubagents = [];
+let activeSubagentsCount = 0;
+
 // Combobox elements
 const modelCombobox = document.getElementById('model-combobox');
 const modelTrigger = document.getElementById('model-trigger');
@@ -45,6 +268,61 @@ let thinkingInterval = null;
 function init() {
     vscode.postMessage({ type: 'getModels' });
     vscode.postMessage({ type: 'getHistory' });
+    vscode.postMessage({ type: 'getSubagents' });
+    vscode.postMessage({ type: 'getSlashCommands' });
+
+    // Delegated event handling for interactive Subagent UI inside Mid-Process Analysis
+    chatContainer?.addEventListener('click', (e) => {
+        // 1. Toggle context viewer
+        const toggleBtn = e.target.closest('.subagent-context-toggle');
+        if (toggleBtn) {
+            const card = toggleBtn.closest('.subagent-card');
+            const viewer = card?.querySelector('.subagent-context-viewer');
+            if (viewer) {
+                const isHidden = viewer.classList.toggle('hidden');
+                toggleBtn.textContent = isHidden ? 'View Context' : 'Hide Context';
+            }
+            return;
+        }
+
+        // 2. Terminate subagent
+        const termBtn = e.target.closest('.subagent-terminate-btn');
+        if (termBtn) {
+            const subagentId = termBtn.dataset.subagentId;
+            if (subagentId) {
+                termBtn.disabled = true;
+                termBtn.textContent = 'Stopping...';
+                vscode.postMessage({
+                    type: 'terminateSubagent',
+                    subagentId
+                });
+            }
+            return;
+        }
+
+        // 3. Reset inactive subagents
+        const resetBtn = e.target.closest('.subagent-reset-btn');
+        if (resetBtn) {
+            resetBtn.disabled = true;
+            vscode.postMessage({ type: 'clearSubagents' });
+            vscode.postMessage({ type: 'getSubagents' });
+            return;
+        }
+    });
+
+    subagentsStatusBtn?.addEventListener('click', () => {
+        subagentsModal?.classList.remove('hidden');
+        renderSubagentsList();
+    });
+
+    closeSubagentsBtn?.addEventListener('click', () => {
+        subagentsModal?.classList.add('hidden');
+    });
+
+    clearSubagentsBtn?.addEventListener('click', () => {
+        vscode.postMessage({ type: 'clearSubagents' });
+        vscode.postMessage({ type: 'getSubagents' });
+    });
 
     optionsBtn?.addEventListener('click', () => {
         vscode.postMessage({ type: 'openSettings' });
@@ -82,6 +360,31 @@ function init() {
     newChatBtn?.addEventListener('click', clearChat);
 
     chatInput.addEventListener('keydown', (e) => {
+        if (slashPopover && !slashPopover.classList.contains('hidden') && currentMatchingSlashCommands.length > 0) {
+            if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                activeSlashIndex = (activeSlashIndex + 1) % currentMatchingSlashCommands.length;
+                updateSlashSelection();
+                return;
+            }
+            if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                activeSlashIndex = (activeSlashIndex - 1 + currentMatchingSlashCommands.length) % currentMatchingSlashCommands.length;
+                updateSlashSelection();
+                return;
+            }
+            if (e.key === 'Enter' || e.key === 'Tab') {
+                e.preventDefault();
+                executeSlashCommand(currentMatchingSlashCommands[activeSlashIndex]);
+                return;
+            }
+            if (e.key === 'Escape') {
+                e.preventDefault();
+                hideSlashPopover();
+                return;
+            }
+        }
+
         if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
             sendMessage();
@@ -91,6 +394,29 @@ function init() {
     chatInput.addEventListener('input', () => {
         chatInput.style.height = 'auto';
         chatInput.style.height = Math.min(chatInput.scrollHeight, 150) + 'px';
+
+        const cursorPos = chatInput.selectionStart;
+        const queryMeta = extractSlashQuery(chatInput.value, cursorPos);
+        if (queryMeta.isMatch) {
+            currentSlashQueryMeta = queryMeta;
+            activeSlashIndex = 0;
+            // Render locally immediately for zero-latency feel
+            renderSlashPopover(filterLocalSlashCommands(queryMeta.query));
+            lastSlashRequestId++;
+            vscode.postMessage({
+                type: 'getSlashCommands',
+                query: queryMeta.query,
+                requestId: lastSlashRequestId
+            });
+        } else {
+            hideSlashPopover();
+        }
+    });
+
+    document.addEventListener('click', (e) => {
+        if (slashPopover && !slashPopover.contains(e.target) && e.target !== chatInput) {
+            hideSlashPopover();
+        }
     });
 
     sendBtn.addEventListener('click', sendMessage);
@@ -172,6 +498,20 @@ window.addEventListener('message', event => {
         case 'contextCompacted':
             renderCompactedBadge(msg.compactedCount, msg.savedTokens);
             break;
+        case 'slashCommandsResult':
+            if (Array.isArray(msg.commands)) {
+                const backendSkills = deduplicateCommands(msg.commands.filter(c => c.category === 'Skill'));
+                if (backendSkills.length > 0) {
+                    dynamicWorkspaceSkills = backendSkills;
+                }
+            }
+            if (msg.requestId === lastSlashRequestId && currentSlashQueryMeta?.isMatch) {
+                renderSlashPopover(msg.commands && msg.commands.length > 0 ? deduplicateCommands(msg.commands) : filterLocalSlashCommands(currentSlashQueryMeta.query));
+            }
+            break;
+        case 'openHistoryModal':
+            sessionsModal?.classList.remove('hidden');
+            break;
         case 'toast':
             showToast(msg.message);
             break;
@@ -188,6 +528,9 @@ window.addEventListener('message', event => {
             break;
         case 'toolPermissionRequest':
             handleToolPermissionRequest(msg.request);
+            break;
+        case 'subagentStatus':
+            updateSubagentsUI(msg.activeCount, msg.subagents);
             break;
         case 'populateInput':
             chatInput.value = msg.text;
@@ -597,7 +940,10 @@ function handleStreamChunk(chunk, done, error) {
             msgEl.innerHTML = '';
         }
         currentAiText += chunk;
-        msgEl.innerHTML = renderMarkdown(currentAiText);
+        msgEl.innerHTML = renderMarkdown(currentAiText, {
+            subagents: currentSubagents,
+            activeCount: activeSubagentsCount
+        });
         
         // Smart scroll: only auto-scroll if user is near the bottom
         const threshold = 150;
@@ -620,7 +966,7 @@ function finishGeneration() {
     isGenerating = false;
     chatInput.disabled = false;
     attachBtn.disabled = false;
-    chatInput.placeholder = "Ask anything...";
+    chatInput.placeholder = "Ask anything... (/ for commands & skills)";
     currentMessageId = null;
     currentAiText = '';
     stopBtn.classList.add('hidden');
@@ -632,6 +978,8 @@ function finishGeneration() {
 function clearChat() {
     chatContainer.innerHTML = '<div class="message system-msg">Welcome to Spin Your AI! Select a model and start chatting.</div>';
     vscode.postMessage({ type: 'clearHistory' });
+    currentSubagents = [];
+    activeSubagentsCount = 0;
     isGenerating = false;
     currentMessageId = null;
     currentAiText = '';
@@ -705,9 +1053,89 @@ function getFileIcon(mimeType) {
     return 'draft';
 }
 
+function escapeSubagentHtml(str) {
+    if (!str) return '';
+    return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+}
+
+function generateSubagentsHtml(subagents, activeCount = 0) {
+    if (!subagents || subagents.length === 0) return '';
+
+    const isWorking = activeCount > 0;
+    const countLabel = isWorking ? `${activeCount} Working` : `${subagents.length} Agent${subagents.length === 1 ? '' : 's'}`;
+    const pulseHtml = isWorking ? '<span class="subagent-pulse-dot"></span>' : '';
+
+    const cardsHtml = subagents.map(sa => {
+        const statusClass = sa.status || 'completed';
+        const isWorkingSa = statusClass === 'working';
+        const turns = sa.turnsCount || (sa.history ? sa.history.filter(h => h.role === 'assistant').length : 0);
+        const idShort = (sa.id || '').length > 18 ? `${sa.id.slice(0, 18)}...` : sa.id;
+
+        let contextContent = '';
+        if (sa.history && sa.history.length > 0) {
+            contextContent = sa.history
+                .map(h => `[${(h.role || 'unknown').toUpperCase()}]\n${typeof h.content === 'string' ? h.content : JSON.stringify(h.content, null, 2)}`)
+                .join('\n\n---\n\n');
+        } else if (sa.result) {
+            contextContent = `[RESULT]\n${sa.result}`;
+        } else {
+            contextContent = '(No context turns recorded)';
+        }
+
+        const termBtnHtml = isWorkingSa 
+            ? `<button type="button" class="subagent-terminate-btn" data-subagent-id="${escapeSubagentHtml(sa.id)}">Terminate</button>` 
+            : '';
+
+        return `
+            <div class="subagent-card ${statusClass}">
+                <div class="subagent-card-header">
+                    <span class="subagent-role">${escapeSubagentHtml(sa.role || 'Specialist')}</span>
+                    <span class="subagent-status-tag ${statusClass}">${statusClass}</span>
+                </div>
+                <div class="subagent-task">${escapeSubagentHtml(sa.task || '')}</div>
+                <div class="subagent-meta">
+                    <span>ID: <code>${escapeSubagentHtml(idShort)}</code> | Turns: ${turns}</span>
+                    <div style="display: flex; gap: 6px;">
+                        <button type="button" class="subagent-context-toggle">View Context</button>
+                        ${termBtnHtml}
+                    </div>
+                </div>
+                <div class="subagent-context-viewer hidden">${escapeSubagentHtml(contextContent)}</div>
+            </div>
+        `;
+    }).join('');
+
+    return `
+        <div class="midprocess-subagents-block">
+            <div class="midprocess-subagents-header">
+                <div class="subagents-title-group">
+                    <span class="material-symbols-outlined" style="font-size:16px;color:var(--text-ai,#7dd3fc);vertical-align:middle;margin-right:6px;">hub</span>
+                    <strong>Autonomous Sub-Agents</strong>
+                    <span class="subagents-count-badge ${isWorking ? 'working' : ''}">${countLabel}</span>
+                    ${pulseHtml}
+                </div>
+                <button type="button" class="subagent-reset-btn" title="Reset Inactive Sub-Agents">
+                    <span class="material-symbols-outlined" style="font-size:14px;vertical-align:middle;">delete_sweep</span> Reset
+                </button>
+            </div>
+            <div class="midprocess-subagents-list">
+                ${cardsHtml}
+            </div>
+        </div>
+    `;
+}
+
 // Markdown renderer
-function renderMarkdown(text) {
-    if (!text) return '';
+function renderMarkdown(text, options = {}) {
+    const subagents = options?.subagents || [];
+    const activeSubagentsCount = options?.activeCount || 0;
+
+    if (!text && (!subagents || subagents.length === 0)) return '';
+    text = text || '';
 
     const protectedBlocks = [];
     text = text.replace(/```(\w*)\n?([\s\S]*?)```/g, (match, lang, code) => {
@@ -740,12 +1168,26 @@ function renderMarkdown(text) {
 
     // 3. Extract Tool logs (MCP and Workspace Agent tools)
     text = text.replace(/(?:\n\n)?>\s*<span[^>]*>settings<\/span>\s*\*Executing (?:MCP )?tool `([^`]+)`\.\.\.\*(?:\n\n)?/gi, (match, toolName) => {
-        const isAgent = toolName.startsWith('workspace_');
-        const icon = isAgent ? 'folder_open' : 'build';
-        const label = isAgent ? 'Executing Workspace Tool' : 'Executing MCP Tool';
-        midProcessItems.push(`<div style="margin-bottom: 4px;"><span class="material-symbols-outlined" style="font-size:14px;vertical-align:middle;margin-right:4px;">${icon}</span>${label}: <code>${toolName}</code></div>`);
+        if (toolName === 'spin_subagent') {
+            if (!subagents || subagents.length === 0) {
+                midProcessItems.push(`<div style="margin-bottom: 4px;"><span class="material-symbols-outlined" style="font-size:14px;vertical-align:middle;margin-right:4px;color:var(--text-ai,#7dd3fc);">hub</span>Executing Tool: <code>spin_subagent</code></div>`);
+            }
+        } else {
+            const isAgent = toolName.startsWith('workspace_');
+            const icon = isAgent ? 'folder_open' : 'build';
+            const label = isAgent ? 'Executing Workspace Tool' : 'Executing MCP Tool';
+            midProcessItems.push(`<div style="margin-bottom: 4px;"><span class="material-symbols-outlined" style="font-size:14px;vertical-align:middle;margin-right:4px;">${icon}</span>${label}: <code>${toolName}</code></div>`);
+        }
         return '';
     });
+
+    // 4. Inject Sub-Agents block into Mid-Process Analysis if subagents are present
+    if (subagents && subagents.length > 0) {
+        if (activeSubagentsCount > 0) {
+            hasOpenStream = true;
+        }
+        midProcessItems.push(generateSubagentsHtml(subagents, activeSubagentsCount));
+    }
 
     if (midProcessItems.length > 0) {
         const combinedContent = midProcessItems.join('<hr style="border-color: #333; margin: 8px 0;">');
@@ -908,3 +1350,131 @@ document.addEventListener('DOMContentLoaded', init);
 if (document.readyState === 'interactive' || document.readyState === 'complete') {
     init();
 }
+
+// ── Sub-Agents UI & Monitor ────────────────────────────────────────
+
+function updateSubagentsUI(activeCount, subagents) {
+    activeSubagentsCount = activeCount || 0;
+    currentSubagents = subagents || [];
+
+    // Update Mid-Process Analysis in current or latest AI message
+    const targetMsgEl = currentMessageId 
+        ? document.getElementById(`msg-${currentMessageId}`)
+        : chatContainer.querySelector('.message.ai-msg:last-of-type');
+
+    if (targetMsgEl && currentAiText) {
+        targetMsgEl.innerHTML = renderMarkdown(currentAiText, {
+            subagents: currentSubagents,
+            activeCount: activeSubagentsCount
+        });
+    }
+
+    if (subagentsStatusBtn && subagentsCountText) {
+        if (activeSubagentsCount > 0) {
+            subagentsStatusBtn.classList.remove('hidden');
+            subagentsStatusBtn.classList.add('working');
+            subagentsCountText.textContent = `${activeSubagentsCount} Working`;
+        } else if (currentSubagents.length > 0) {
+            subagentsStatusBtn.classList.remove('hidden');
+            subagentsStatusBtn.classList.remove('working');
+            subagentsCountText.textContent = `${currentSubagents.length} Sub-Agent${currentSubagents.length === 1 ? '' : 's'}`;
+        } else {
+            subagentsStatusBtn.classList.add('hidden');
+            subagentsStatusBtn.classList.remove('working');
+        }
+    }
+
+    if (subagentsModal && !subagentsModal.classList.contains('hidden')) {
+        renderSubagentsList();
+    }
+}
+
+function renderSubagentsList() {
+    if (!subagentsListContainer) return;
+    subagentsListContainer.innerHTML = '';
+
+    if (currentSubagents.length === 0) {
+        subagentsListContainer.innerHTML = '<div class="subagents-empty">No sub-agents currently spawned.</div>';
+        return;
+    }
+
+    const sorted = [...currentSubagents].sort((a, b) => {
+        if (a.status === 'working' && b.status !== 'working') return -1;
+        if (b.status === 'working' && a.status !== 'working') return 1;
+        return (b.createdAt || 0) - (a.createdAt || 0);
+    });
+
+    for (const sa of sorted) {
+        const card = document.createElement('div');
+        card.className = `subagent-card ${sa.status}`;
+
+        const header = document.createElement('div');
+        header.className = 'subagent-card-header';
+
+        const role = document.createElement('span');
+        role.className = 'subagent-role';
+        role.textContent = sa.role || 'Specialist';
+
+        const statusTag = document.createElement('span');
+        statusTag.className = `subagent-status-tag ${sa.status}`;
+        statusTag.textContent = sa.status;
+
+        header.appendChild(role);
+        header.appendChild(statusTag);
+        card.appendChild(header);
+
+        const task = document.createElement('div');
+        task.className = 'subagent-task';
+        task.textContent = sa.task;
+        card.appendChild(task);
+
+        const meta = document.createElement('div');
+        meta.className = 'subagent-meta';
+
+        const turnsInfo = document.createElement('span');
+        turnsInfo.textContent = `ID: ${sa.id.slice(0, 16)}... | Turns: ${sa.turnsCount || 0}`;
+        meta.appendChild(turnsInfo);
+
+        const actions = document.createElement('div');
+        actions.style.display = 'flex';
+        actions.style.gap = '6px';
+
+        const toggleContextBtn = document.createElement('button');
+        toggleContextBtn.className = 'subagent-context-toggle';
+        toggleContextBtn.textContent = 'View Context';
+        actions.appendChild(toggleContextBtn);
+
+        if (sa.status === 'working') {
+            const termBtn = document.createElement('button');
+            termBtn.className = 'subagent-terminate-btn';
+            termBtn.textContent = 'Terminate';
+            termBtn.addEventListener('click', () => {
+                vscode.postMessage({
+                    type: 'terminateSubagent',
+                    subagentId: sa.id
+                });
+            });
+            actions.appendChild(termBtn);
+        }
+
+        meta.appendChild(actions);
+        card.appendChild(meta);
+
+        const contextViewer = document.createElement('div');
+        contextViewer.className = 'subagent-context-viewer hidden';
+
+        const contextContent = (sa.history || [])
+            .map(h => `[${(h.role || 'unknown').toUpperCase()}]\n${typeof h.content === 'string' ? h.content : JSON.stringify(h.content, null, 2)}`)
+            .join('\n\n---\n\n');
+        contextViewer.textContent = contextContent || '(No context turns recorded)';
+        card.appendChild(contextViewer);
+
+        toggleContextBtn.addEventListener('click', () => {
+            const isHidden = contextViewer.classList.toggle('hidden');
+            toggleContextBtn.textContent = isHidden ? 'View Context' : 'Hide Context';
+        });
+
+        subagentsListContainer.appendChild(card);
+    }
+}
+

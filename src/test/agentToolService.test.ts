@@ -16,7 +16,7 @@ describe('AgentToolService', () => {
 
     it('returns built-in workspace tool schemas', () => {
         const tools = AgentToolService.getToolDefinitions();
-        assert.strictEqual(tools.length, 6);
+        assert.strictEqual(tools.length, 7);
         const names = tools.map(t => t.function.name);
         assert.ok(names.includes('workspace_get_context'));
         assert.ok(names.includes('workspace_list_dir'));
@@ -24,12 +24,14 @@ describe('AgentToolService', () => {
         assert.ok(names.includes('workspace_read_file'));
         assert.ok(names.includes('workspace_write_file'));
         assert.ok(names.includes('workspace_edit_file'));
+        assert.ok(names.includes('spin_subagent'));
     });
 
     it('identifies agent tools accurately', () => {
         assert.strictEqual(AgentToolService.isAgentTool('workspace_read_file'), true);
         assert.strictEqual(AgentToolService.isAgentTool('workspace_search_files'), true);
         assert.strictEqual(AgentToolService.isAgentTool('workspace_get_context'), true);
+        assert.strictEqual(AgentToolService.isAgentTool('spin_subagent'), true);
         assert.strictEqual(AgentToolService.isAgentTool('mcp_fetch'), false);
         assert.strictEqual(AgentToolService.isAgentTool('random_tool'), false);
     });

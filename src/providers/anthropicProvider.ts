@@ -2,6 +2,7 @@ import { BaseProvider } from './baseProvider';
 import { Message, ModelInfo, StreamChunk } from '../types';
 import { HttpService } from '../utils/http';
 import { McpService } from '../services/mcpService';
+import { SubagentService } from '../services/subagentService';
 
 export class AnthropicProvider extends BaseProvider {
     constructor() {
@@ -25,12 +26,19 @@ export class AnthropicProvider extends BaseProvider {
         ];
     }
 
-    async *streamChat(messages: Message[], modelId: string, signal?: AbortSignal): AsyncGenerator<StreamChunk, void, unknown> {
+    async *streamChat(
+        messages: Message[], 
+        modelId: string, 
+        signal?: AbortSignal, 
+        options?: { isSubagent?: boolean }
+    ): AsyncGenerator<StreamChunk, void, unknown> {
         const apiKey = await this.getApiKey();
         if (!apiKey) { throw new Error('Anthropic API key not found'); }
 
         const baseUrl = this.getBaseUrl();
-        const tools = await McpService.getActiveTools();
+        const isSubagent = !!options?.isSubagent || SubagentService.isInsideSubagent();
+        const allTools = await McpService.getActiveTools({ isSubagent });
+        const maxToolTurns = isSubagent ? 3 : 25;
         
         const systemMessages = messages.filter(m => m.role === 'system').map(m => m.content).join('\n');
         const currentMessages: any[] = messages.filter(m => m.role !== 'system').map(m => ({
@@ -41,6 +49,9 @@ export class AnthropicProvider extends BaseProvider {
         let totalGeneratedContent = 0;
 
         while (true) {
+            const canSpin = !isSubagent && SubagentService.getTurnSubagentCount() < SubagentService.MAX_SUBAGENTS_PER_TURN;
+            const turnTools = canSpin ? allTools : allTools.filter(t => t.function.name !== 'spin_subagent');
+
             const body: any = {
                 model: modelId,
                 system: systemMessages || undefined,
@@ -49,8 +60,8 @@ export class AnthropicProvider extends BaseProvider {
                 stream: true
             };
 
-            if (tools.length > 0) {
-                body.tools = tools.map(t => ({
+            if (turnTools.length > 0) {
+                body.tools = turnTools.map(t => ({
                     name: t.function.name,
                     description: t.function.description || 'MCP Tool',
                     input_schema: t.function.parameters || { type: 'object', properties: {} }
@@ -108,8 +119,8 @@ export class AnthropicProvider extends BaseProvider {
             const toolCallList = Object.values(toolCalls);
             if (toolCallList.length > 0) {
                 toolCallCount++;
-                if (toolCallCount > 25) {
-                    yield { text: `\n\n> <span class="material-symbols-outlined" style="font-size:16px;vertical-align:-3px;color:#f59e0b">warning</span> *Reached sequential tool call safety limit (25 turns). Stopping autonomous loop.*`, done: false };
+                if (toolCallCount > maxToolTurns) {
+                    yield { text: `\n\n> <span class="material-symbols-outlined" style="font-size:16px;vertical-align:-3px;color:#f59e0b">warning</span> *Reached sequential tool call safety limit (${maxToolTurns} turns). Stopping autonomous loop.*`, done: false };
                     break;
                 }
 

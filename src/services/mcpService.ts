@@ -6,6 +6,7 @@ import * as readline from 'readline';
 import { Logger } from '../utils/logger';
 import { HttpService } from '../utils/http';
 import { AgentToolService } from './agentToolService';
+import { SubagentService } from './subagentService';
 
 export interface McpServerConfig {
     type?: string;          // 'http' | 'sse'
@@ -334,18 +335,19 @@ export class McpService {
         }
     }
 
-    public static async getActiveTools(): Promise<McpToolDefinition[]> {
+    public static async getActiveTools(options?: { isSubagent?: boolean }): Promise<McpToolDefinition[]> {
+        const isSub = options?.isSubagent || SubagentService.isInsideSubagent();
         const now = Date.now();
         if (this.cachedTools && (now - this.cacheTimestamp) < this.CACHE_TTL_MS) {
-            return this.cachedTools;
+            return isSub ? this.cachedTools.filter(t => t.function.name !== 'spin_subagent') : this.cachedTools;
         }
 
-        const tools: McpToolDefinition[] = [...AgentToolService.getToolDefinitions()];
+        const tools: McpToolDefinition[] = [...AgentToolService.getToolDefinitions({ isSubagent: false })];
 
         if (!this.isEnabled()) {
             this.cachedTools = tools;
             this.cacheTimestamp = now;
-            return tools;
+            return isSub ? tools.filter(t => t.function.name !== 'spin_subagent') : tools;
         }
 
         try {
@@ -354,7 +356,7 @@ export class McpService {
             if (!config || !config.mcpServers) {
                 this.cachedTools = tools;
                 this.cacheTimestamp = now;
-                return tools;
+                return isSub ? tools.filter(t => t.function.name !== 'spin_subagent') : tools;
             }
 
             for (const [serverKey, s] of Object.entries(config.mcpServers)) {
@@ -419,7 +421,7 @@ export class McpService {
 
         this.cachedTools = tools;
         this.cacheTimestamp = now;
-        return tools;
+        return isSub ? tools.filter(t => t.function.name !== 'spin_subagent') : tools;
     }
 
     /**

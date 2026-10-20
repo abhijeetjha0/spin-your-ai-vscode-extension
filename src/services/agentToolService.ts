@@ -1,5 +1,6 @@
 import { WorkspaceService, FileDiffInfo } from './workspaceService';
 import { Logger } from '../utils/logger';
+import { SubagentService } from './subagentService';
 
 export interface ToolPermissionRequest {
     requestId: string;
@@ -36,8 +37,9 @@ export class AgentToolService {
     /**
      * Returns built-in workspace agent tool schemas to supply to the LLM.
      */
-    public static getToolDefinitions(): any[] {
-        return [
+    public static getToolDefinitions(options?: { isSubagent?: boolean }): any[] {
+        const isSub = options?.isSubagent || SubagentService.isInsideSubagent();
+        const tools: any[] = [
             {
                 type: 'function',
                 function: {
@@ -152,15 +154,46 @@ export class AgentToolService {
                         required: ['file_path', 'target_content', 'replacement_content']
                     }
                 }
+            },
+            {
+                type: 'function',
+                function: {
+                    name: 'spin_subagent',
+                    description: 'Spin up a specialized, autonomous sub-agent to handle a focused subtask (e.g. image/diagram inspection, isolated code analysis, workspace search, data extraction, or deep research). Maintains its own isolated context and returns a comprehensive result. Specify subagent_id to resume an existing sub-agent. IMPORTANT: Only spin the exact number of sub-agents requested by the user. Do not spawn recursive or redundant sub-agents. Once all requested sub-agents complete, synthesize their results and directly answer the user.',
+                    parameters: {
+                        type: 'object',
+                        properties: {
+                            role: {
+                                type: 'string',
+                                description: 'The specialized role/persona of the sub-agent (e.g., "Multimodal Vision Analyst", "Code Inspector", "Security Auditor", "Research Specialist").'
+                            },
+                            task: {
+                                type: 'string',
+                                description: 'The exact task, question, or goal the sub-agent must execute.'
+                            },
+                            context: {
+                                type: 'string',
+                                description: 'Optional background context, data, code, or details necessary for the sub-agent.'
+                            },
+                            subagent_id: {
+                                type: 'string',
+                                description: 'Optional ID of a previously spun sub-agent to continue its existing conversation context.'
+                            }
+                        },
+                        required: ['role', 'task']
+                    }
+                }
             }
         ];
+
+        return isSub ? tools.filter(t => t.function.name !== 'spin_subagent') : tools;
     }
 
     /**
      * Checks if a tool name is one of the built-in workspace agent tools.
      */
     public static isAgentTool(toolName: string): boolean {
-        return toolName.startsWith('workspace_');
+        return toolName.startsWith('workspace_') || toolName === 'spin_subagent';
     }
 
     /**
@@ -168,6 +201,30 @@ export class AgentToolService {
      */
     public static async executeTool(toolName: string, args: any): Promise<any> {
         switch (toolName) {
+            case 'spin_subagent': {
+                // 1. Strict Recursion Guard: Sub-agents are leaf agents and cannot spawn nested sub-agents
+                if (SubagentService.isInsideSubagent()) {
+                    return {
+                        error: 'Action blocked: Sub-agents are leaf agents and cannot spawn nested sub-agents. Please perform your assigned task directly.'
+                    };
+                }
+
+                // 2. Turn safety limit: Prevent infinite loop or over-delegation beyond limit
+                if (SubagentService.getTurnSubagentCount() >= SubagentService.MAX_SUBAGENTS_PER_TURN) {
+                    return {
+                        error: `Turn sub-agent limit reached (maximum ${SubagentService.MAX_SUBAGENTS_PER_TURN} sub-agents per turn). Do not spin any more sub-agents. Synthesize the findings from the sub-agents above and provide your final response to the user now.`
+                    };
+                }
+                SubagentService.incrementTurnSubagentCount();
+
+                return await SubagentService.spinSubagent({
+                    role: args.role,
+                    task: args.task,
+                    context: args.context,
+                    subagentId: args.subagent_id
+                });
+            }
+
             case 'workspace_get_context': {
                 return await WorkspaceService.getWorkspaceContext();
             }

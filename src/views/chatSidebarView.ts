@@ -8,6 +8,8 @@ import { McpService } from '../services/mcpService';
 import { WorkspaceService } from '../services/workspaceService';
 import { AgentToolService } from '../services/agentToolService';
 import { ContextCompactor } from '../services/contextCompactor';
+import { SubagentService } from '../services/subagentService';
+import { SlashCommandService } from '../services/slashCommandService';
 
 interface ChatHistoryItem {
     role: 'user' | 'assistant' | 'system';
@@ -91,6 +93,15 @@ export class ChatSidebarViewProvider implements vscode.WebviewViewProvider {
             return true;
         });
 
+        // Broadcast sub-agent updates to webview
+        SubagentService.onStatusChange((payload) => {
+            this.sendMessageToWebview({
+                type: 'subagentStatus',
+                activeCount: payload.activeCount,
+                subagents: payload.subagents
+            });
+        });
+
         webviewView.webview.onDidReceiveMessage(async (data) => {
             switch (data.type) {
                 case 'toolPermissionResponse':
@@ -127,6 +138,7 @@ export class ChatSidebarViewProvider implements vscode.WebviewViewProvider {
                     if (this._currentAbortController) {
                         this._currentAbortController.abort();
                     }
+                    SubagentService.terminateAllActive();
                     break;
                 case 'compactContext':
                     await this.handleCompactContext(data.providerId, data.modelId);
@@ -140,6 +152,50 @@ export class ChatSidebarViewProvider implements vscode.WebviewViewProvider {
                 case 'deleteSession':
                     await this.deleteSession(data.sessionId);
                     break;
+                case 'getSubagents':
+                    this.sendMessageToWebview({
+                        type: 'subagentStatus',
+                        activeCount: SubagentService.getActiveCount(),
+                        subagents: SubagentService.getSubagents()
+                    });
+                    break;
+                case 'terminateSubagent':
+                    SubagentService.terminateSubagent(data.subagentId);
+                    break;
+                case 'clearSubagents':
+                    SubagentService.clearSubagents();
+                    break;
+                case 'getSlashCommands': {
+                    const commands = await SlashCommandService.filterCommands(data.query || '', !!data.forceRefresh);
+                    this.sendMessageToWebview({
+                        type: 'slashCommandsResult',
+                        commands,
+                        requestId: data.requestId
+                    });
+                    break;
+                }
+                case 'executeSlashAction': {
+                    switch (data.actionId) {
+                        case 'compact':
+                            await this.handleCompactContext(data.providerId, data.modelId);
+                            break;
+                        case 'history':
+                            this.sendMessageToWebview({ type: 'openHistoryModal' });
+                            break;
+                        case 'refresh':
+                            await this.sendModels();
+                            await SlashCommandService.discoverSkills(true);
+                            this.sendMessageToWebview({ type: 'toast', message: 'Refreshed models and workspace skills' });
+                            break;
+                        case 'clear':
+                            this.clearHistory();
+                            break;
+                        case 'help':
+                            HelpPanel.createOrShow(this._extensionUri);
+                            break;
+                    }
+                    break;
+                }
             }
         });
     }
@@ -217,6 +273,7 @@ export class ChatSidebarViewProvider implements vscode.WebviewViewProvider {
             this._currentAbortController.abort();
             this._currentAbortController = undefined;
         }
+        SubagentService.clearSubagents();
         this.saveHistory();
         this.restoreHistory();
     }
@@ -309,7 +366,10 @@ export class ChatSidebarViewProvider implements vscode.WebviewViewProvider {
     ) {
         if (!this._view) { return; }
 
+        SubagentService.resetTurnSubagentCount();
+
         let processedText = text;
+        let extractedContext = '';
 
         // Context inclusion: grab active editor content if requested or @file tag
         if (includeContext || processedText.includes('@file')) {
@@ -321,12 +381,15 @@ export class ChatSidebarViewProvider implements vscode.WebviewViewProvider {
                 const codeContent = selectedText || document.getText();
                 const fileContext = `\n\n--- Active File: ${document.fileName} ---\n\`\`\`\n${codeContent}\n\`\`\`\n--- End File ---`;
                 processedText = processedText.replace('@file', '') + fileContext;
+                extractedContext += fileContext;
             }
         }
         
         if (processedText.includes('@workspace')) {
             const workspaceContext = await WorkspaceService.getWorkspaceContext();
-            processedText = processedText.replace('@workspace', '') + `\n\n--- Workspace Context ---\n${workspaceContext}\n--- End Workspace Context ---`;
+            const wsBlock = `\n\n--- Workspace Context ---\n${workspaceContext}\n--- End Workspace Context ---`;
+            processedText = processedText.replace('@workspace', '') + wsBlock;
+            extractedContext += wsBlock;
         }
 
         // Attachments text extraction for non-images
@@ -348,6 +411,13 @@ export class ChatSidebarViewProvider implements vscode.WebviewViewProvider {
             this._view.webview.postMessage({ type: 'error', message: 'Provider not found or not configured.' });
             return;
         }
+
+        SubagentService.setActiveTurnContext({
+            provider,
+            modelId,
+            attachments: attachments || [],
+            defaultContext: extractedContext.trim() || undefined
+        });
 
         if (!this._currentSessionId) {
             this._currentSessionId = Date.now().toString();
@@ -380,10 +450,10 @@ export class ChatSidebarViewProvider implements vscode.WebviewViewProvider {
 
         try {
             const messagesPayload: Message[] = [];
-            const systemMessage = ConfigService.get<string>('systemMessage');
-            if (systemMessage) {
-                messagesPayload.push({ role: 'system', content: systemMessage });
-            }
+            const userSystemMessage = ConfigService.get<string>('systemMessage') || '';
+            const subagentDirective = 'When using the spin_subagent tool, only spin the exact number of sub-agents requested by the user. Sub-agents are autonomous leaf workers. Once all requested sub-agents complete, synthesize their results and directly answer the user without spinning further sub-agents.';
+            const systemMessage = userSystemMessage ? `${userSystemMessage}\n\n${subagentDirective}` : subagentDirective;
+            messagesPayload.push({ role: 'system', content: systemMessage });
 
             const session = this._sessions.find(s => s.id === this._currentSessionId);
             const priorHistory = history.slice(0, history.length - 1);
@@ -562,6 +632,16 @@ export class ChatSidebarViewProvider implements vscode.WebviewViewProvider {
                     </main>
 
                     <footer class="input-area glassmorphism">
+                        <!-- Slash commands suggestions popover -->
+                        <div id="slash-commands-popover" class="slash-commands-popover hidden">
+                            <div class="slash-commands-header">
+                                <span class="material-symbols-outlined" style="font-size: 14px; color: var(--text-ai, #7dd3fc);">terminal</span>
+                                <span>COMMANDS &amp; SKILLS</span>
+                                <span style="margin-left: auto; font-size: 10px; color: var(--text-muted, #94a3b8);">↑↓ navigate &bull; ↵ select &bull; esc close</span>
+                            </div>
+                            <div id="slash-commands-list" class="slash-commands-list"></div>
+                        </div>
+
                         <div class="context-toggle">
                             <label class="toggle-pill">
                                 <input type="checkbox" id="include-page-context">
@@ -574,7 +654,7 @@ export class ChatSidebarViewProvider implements vscode.WebviewViewProvider {
                                 <span class="material-symbols-outlined">attach_file</span>
                             </button>
                             <input type="file" id="file-input" class="hidden" multiple accept="image/*,audio/*,video/*,.pdf,.html,.htm,.css,.js,.ts,.json,.xml,.csv,.txt,.md,.py,.java,.c,.cpp,.go,.rs,.rb,.sh">
-                            <textarea id="chat-input" placeholder="Ask anything..." rows="1"></textarea>
+                            <textarea id="chat-input" placeholder="Ask anything... (/ for commands &amp; skills)" rows="1"></textarea>
                             <button id="send-btn" class="send-btn" title="Send message">
                                 <span class="material-symbols-outlined">send</span>
                             </button>
@@ -592,6 +672,25 @@ export class ChatSidebarViewProvider implements vscode.WebviewViewProvider {
                             <button id="close-sessions-btn" class="icon-btn"><span class="material-symbols-outlined">close</span></button>
                         </div>
                         <div id="sessions-list" class="modal-body sessions-list" style="max-height: 400px; overflow-y: auto;"></div>
+                    </div>
+                </div>
+
+                <!-- Sub-Agents Monitor Modal -->
+                <div id="subagents-modal" class="modal hidden">
+                    <div class="modal-content subagents-modal-content">
+                        <div class="modal-header">
+                            <div class="modal-title-wrapper" style="display: flex; align-items: center; gap: 8px;">
+                                <span class="material-symbols-outlined" style="color: #38bdf8; font-size: 18px;">account_tree</span>
+                                <h2 style="font-size: 13px; color: var(--text-main); font-weight: bold; letter-spacing: 0.08em; margin: 0;">SUB-AGENTS MONITOR</h2>
+                            </div>
+                            <div style="display: flex; align-items: center; gap: 6px;">
+                                <button id="clear-subagents-btn" class="icon-btn" title="Reset Inactive Sub-Agents"><span class="material-symbols-outlined">delete_sweep</span></button>
+                                <button id="close-subagents-btn" class="icon-btn" title="Close"><span class="material-symbols-outlined">close</span></button>
+                            </div>
+                        </div>
+                        <div class="modal-body subagents-list-body" id="subagents-list-container">
+                            <!-- Sub-agent cards rendered dynamically -->
+                        </div>
                     </div>
                 </div>
                 

@@ -10,6 +10,7 @@ Spin up AI models from your editor, powered by local AI, cloud frontiers, and Mo
 - **Built-in Workspace Agent Tools**: Tool-capable models (OpenAI, Gemini, Anthropic, Ollama Cloud, OpenRouter) can inspect files, list directories, and propose code changes.
 - **Strict Permission-First Control**: No files are modified without your consent. Proposed changes display an interactive unified diff preview with **Approve** and **Reject** buttons directly in the chat sidebar.
 - **Chat & Context Compaction**: Condense verbose earlier turns into an executive summary on demand or automatically, slashing token consumption and latency just like Claude, Gemini, and ChatGPT.
+- **Multimodal Sub-Agent Structure & Live Monitor**: The model can autonomously spin up specialized sub-agents with preserved conversation context for focused multimodal sub-tasks (image/diagram analysis, workspace search, security audits). The UI header features a live counter badge (`N Working`) with an interactive monitor modal to review sub-agent progress and inspect internal context.
 - **Editor Integration**: Highlight code and right-click to Explain, Refactor, or Fix Bugs.
 - **Secure Key Storage**: API keys are encrypted in your OS native keychain (macOS Keychain, Windows Credential Manager, Linux Secret Service) via VS Code's `SecretStorage` API.
 - **Zero Config Local**: Connects directly to Ollama at `localhost:11434` out of the box.

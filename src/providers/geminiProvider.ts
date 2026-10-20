@@ -2,6 +2,7 @@ import { BaseProvider } from './baseProvider';
 import { Message, ModelInfo, StreamChunk } from '../types';
 import { HttpService } from '../utils/http';
 import { McpService } from '../services/mcpService';
+import { SubagentService } from '../services/subagentService';
 
 export class GeminiProvider extends BaseProvider {
     constructor() {
@@ -42,12 +43,19 @@ export class GeminiProvider extends BaseProvider {
         }
     }
 
-    async *streamChat(messages: Message[], modelId: string, signal?: AbortSignal): AsyncGenerator<StreamChunk, void, unknown> {
+    async *streamChat(
+        messages: Message[], 
+        modelId: string, 
+        signal?: AbortSignal, 
+        options?: { isSubagent?: boolean }
+    ): AsyncGenerator<StreamChunk, void, unknown> {
         const apiKey = await this.getApiKey();
         if (!apiKey) { throw new Error('Gemini API key not found'); }
 
         const baseUrl = this.getBaseUrl();
-        const tools = await McpService.getActiveTools();
+        const isSubagent = !!options?.isSubagent || SubagentService.isInsideSubagent();
+        const allTools = await McpService.getActiveTools({ isSubagent });
+        const maxToolTurns = isSubagent ? 3 : 25;
         const contents: any[] = messages.filter(m => m.role !== 'system').map(m => ({
             role: m.role === 'assistant' ? 'model' : 'user',
             parts: [{ text: m.content }]
@@ -59,12 +67,15 @@ export class GeminiProvider extends BaseProvider {
         let totalGeneratedContent = 0;
 
         while (true) {
+            const canSpin = !isSubagent && SubagentService.getTurnSubagentCount() < SubagentService.MAX_SUBAGENTS_PER_TURN;
+            const turnTools = canSpin ? allTools : allTools.filter(t => t.function.name !== 'spin_subagent');
+
             const body: any = { contents: currentContents };
             if (systemInstruction) {
                 body.systemInstruction = { parts: [{ text: systemInstruction }] };
             }
 
-            if (tools.length > 0) {
+            if (turnTools.length > 0) {
                 const sanitizeSchema = (schema: any): any => {
                     if (!schema || typeof schema !== 'object') { return schema; }
                     if (Array.isArray(schema)) { return schema.map((s: any) => sanitizeSchema(s)); }
@@ -110,7 +121,7 @@ export class GeminiProvider extends BaseProvider {
                 };
 
                 body.tools = [{
-                    function_declarations: tools.map(t => ({
+                    function_declarations: turnTools.map(t => ({
                         name: t.function.name,
                         description: t.function.description || 'Tool function',
                         parameters: sanitizeSchema(t.function.parameters)
@@ -158,8 +169,8 @@ export class GeminiProvider extends BaseProvider {
 
             if (functionCalls.length > 0) {
                 toolCallCount++;
-                if (toolCallCount > 25) {
-                    yield { text: `\n\n> <span class="material-symbols-outlined" style="font-size:16px;vertical-align:-3px;color:#f59e0b">warning</span> *Reached sequential tool call safety limit (25 turns). Stopping autonomous loop.*`, done: false };
+                if (toolCallCount > maxToolTurns) {
+                    yield { text: `\n\n> <span class="material-symbols-outlined" style="font-size:16px;vertical-align:-3px;color:#f59e0b">warning</span> *Reached sequential tool call safety limit (${maxToolTurns} turns). Stopping autonomous loop.*`, done: false };
                     break;
                 }
 

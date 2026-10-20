@@ -38,6 +38,10 @@ Module.prototype.require = function(id) {
                     const allKeys = Array.from(global.__vscodeMockState.files.keys());
                     const filtered = allKeys.filter(k => {
                         if (exclude && exclude.includes('node_modules') && k.includes('node_modules')) return false;
+                        if (typeof include === 'string') {
+                            if (include.includes('.agents') && !k.includes('.agents')) return false;
+                            if (include.includes('SKILL.md') && !k.endsWith('SKILL.md')) return false;
+                        }
                         return true;
                     });
                     const sliced = maxResults ? filtered.slice(0, maxResults) : filtered;

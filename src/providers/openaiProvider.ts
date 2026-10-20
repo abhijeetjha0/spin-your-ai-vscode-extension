@@ -2,6 +2,7 @@ import { BaseProvider } from './baseProvider';
 import { Message, ModelInfo, StreamChunk } from '../types';
 import { HttpService } from '../utils/http';
 import { McpService } from '../services/mcpService';
+import { SubagentService } from '../services/subagentService';
 
 export class OpenAIProvider extends BaseProvider {
     constructor(config?: any) {
@@ -44,25 +45,35 @@ export class OpenAIProvider extends BaseProvider {
         }
     }
 
-    async *streamChat(messages: Message[], modelId: string, signal?: AbortSignal): AsyncGenerator<StreamChunk, void, unknown> {
+    async *streamChat(
+        messages: Message[], 
+        modelId: string, 
+        signal?: AbortSignal, 
+        options?: { isSubagent?: boolean }
+    ): AsyncGenerator<StreamChunk, void, unknown> {
         const apiKey = await this.getApiKey();
         if (this.config.apiKeyRequired && !apiKey) { throw new Error(`${this.config.name} API key not found`); }
 
         const baseUrl = this.getBaseUrl();
-        const tools = await McpService.getActiveTools();
+        const isSubagent = !!options?.isSubagent || SubagentService.isInsideSubagent();
+        const allTools = await McpService.getActiveTools({ isSubagent });
+        const maxToolTurns = isSubagent ? 3 : 25;
         const currentMessages: any[] = [...messages];
         let toolCallCount = 0;
         let totalGeneratedContent = 0;
 
         while (true) {
+            const canSpin = !isSubagent && SubagentService.getTurnSubagentCount() < SubagentService.MAX_SUBAGENTS_PER_TURN;
+            const turnTools = canSpin ? allTools : allTools.filter(t => t.function.name !== 'spin_subagent');
+
             const payload: any = {
                 model: modelId,
                 messages: currentMessages,
                 stream: true
             };
 
-            if (this.config.supportsTools !== false && tools.length > 0) {
-                payload.tools = tools;
+            if (this.config.supportsTools !== false && turnTools.length > 0) {
+                payload.tools = turnTools;
             }
 
             const headers: Record<string, string> = { 'Content-Type': 'application/json' };
@@ -119,8 +130,8 @@ export class OpenAIProvider extends BaseProvider {
             const toolCalls = Object.values(toolCallsBuffer);
             if (toolCalls.length > 0) {
                 toolCallCount++;
-                if (toolCallCount > 25) {
-                    yield { text: `\n\n> <span class="material-symbols-outlined" style="font-size:16px;vertical-align:-3px;color:#f59e0b">warning</span> *Reached sequential tool call safety limit (25 turns). Stopping autonomous loop.*`, done: false };
+                if (toolCallCount > maxToolTurns) {
+                    yield { text: `\n\n> <span class="material-symbols-outlined" style="font-size:16px;vertical-align:-3px;color:#f59e0b">warning</span> *Reached sequential tool call safety limit (${maxToolTurns} turns). Stopping autonomous loop.*`, done: false };
                     break;
                 }
 

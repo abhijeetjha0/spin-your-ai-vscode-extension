@@ -22,7 +22,12 @@ export abstract class BaseProvider {
     }
 
     abstract listModels(): Promise<ModelInfo[]>;
-    abstract streamChat(messages: Message[], modelId: string, signal?: AbortSignal): AsyncGenerator<StreamChunk, void, unknown>;
+    abstract streamChat(
+        messages: Message[], 
+        modelId: string, 
+        signal?: AbortSignal, 
+        options?: { isSubagent?: boolean }
+    ): AsyncGenerator<StreamChunk, void, unknown>;
     
     public async ping(): Promise<boolean> {
         try {
