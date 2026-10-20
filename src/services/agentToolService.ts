@@ -1,6 +1,7 @@
 import { WorkspaceService, FileDiffInfo } from './workspaceService';
 import { Logger } from '../utils/logger';
 import { SubagentService } from './subagentService';
+import { ToolCacheService } from './toolCacheService';
 
 export interface ToolPermissionRequest {
     requestId: string;
@@ -81,6 +82,24 @@ export class AgentToolService {
                             }
                         },
                         required: ['file_path']
+                    }
+                }
+            },
+            {
+                type: 'function',
+                function: {
+                    name: 'workspace_read_files',
+                    description: 'Read the text contents of multiple files in parallel in a single tool call. Maximizes efficiency and minimizes turns.',
+                    parameters: {
+                        type: 'object',
+                        properties: {
+                            file_paths: {
+                                type: 'array',
+                                items: { type: 'string' },
+                                description: 'List of relative file paths to read concurrently.'
+                            }
+                        },
+                        required: ['file_paths']
                     }
                 }
             },
@@ -178,6 +197,10 @@ export class AgentToolService {
                             subagent_id: {
                                 type: 'string',
                                 description: 'Optional ID of a previously spun sub-agent to continue its existing conversation context.'
+                            },
+                            max_turns: {
+                                type: 'number',
+                                description: 'Optional maximum tool turns budget for this sub-agent (default 12 for deep skill tasks, 5 for simple tasks).'
                             }
                         },
                         required: ['role', 'task']
@@ -200,6 +223,15 @@ export class AgentToolService {
      * Executes a built-in workspace agent tool.
      */
     public static async executeTool(toolName: string, args: any): Promise<any> {
+        const cached = ToolCacheService.get(toolName, args);
+        if (cached !== null) {
+            try {
+                return JSON.parse(cached);
+            } catch {
+                return cached;
+            }
+        }
+
         switch (toolName) {
             case 'spin_subagent': {
                 // 1. Strict Recursion Guard: Sub-agents are leaf agents and cannot spawn nested sub-agents
@@ -221,21 +253,26 @@ export class AgentToolService {
                     role: args.role,
                     task: args.task,
                     context: args.context,
-                    subagentId: args.subagent_id
+                    subagentId: args.subagent_id,
+                    maxTurns: typeof args.max_turns === 'number' ? args.max_turns : undefined
                 });
             }
 
             case 'workspace_get_context': {
-                return await WorkspaceService.getWorkspaceContext();
+                const res = await WorkspaceService.getWorkspaceContext();
+                ToolCacheService.set(toolName, args, JSON.stringify(res));
+                return res;
             }
 
             case 'workspace_list_dir': {
                 const dirPath = args.dir_path || '.';
                 const items = await WorkspaceService.listDirectory(dirPath);
-                return {
+                const res = {
                     directory: dirPath,
                     items: items.map(i => `${i.name}${i.isDirectory ? '/' : ''}`)
                 };
+                ToolCacheService.set(toolName, args, JSON.stringify(res));
+                return res;
             }
 
             case 'workspace_read_file': {
@@ -243,10 +280,23 @@ export class AgentToolService {
                     throw new Error('Missing required argument: "file_path"');
                 }
                 const content = await WorkspaceService.readFile(args.file_path);
-                return {
+                const res = {
                     file_path: args.file_path,
                     content
                 };
+                ToolCacheService.set(toolName, args, JSON.stringify(res));
+                return res;
+            }
+
+            case 'workspace_read_files': {
+                const paths = Array.isArray(args.file_paths) ? args.file_paths : [];
+                if (paths.length === 0) {
+                    throw new Error('Missing or empty required argument: "file_paths"');
+                }
+                const files = await WorkspaceService.readMultipleFiles(paths);
+                const res = { files };
+                ToolCacheService.set(toolName, args, JSON.stringify(res));
+                return res;
             }
 
             case 'workspace_search_files': {
@@ -258,10 +308,12 @@ export class AgentToolService {
                     args.file_pattern,
                     typeof args.max_results === 'number' ? args.max_results : 30
                 );
-                return {
+                const res = {
                     query: args.query,
                     results
                 };
+                ToolCacheService.set(toolName, args, JSON.stringify(res));
+                return res;
             }
 
             case 'workspace_write_file': {
@@ -281,6 +333,7 @@ export class AgentToolService {
                 }
 
                 await WorkspaceService.applyWrite(args.file_path, args.content);
+                ToolCacheService.invalidate();
                 return {
                     success: true,
                     file_path: args.file_path,
@@ -309,6 +362,7 @@ export class AgentToolService {
                 }
 
                 await WorkspaceService.applyWrite(args.file_path, diffInfo.newContent);
+                ToolCacheService.invalidate();
                 return {
                     success: true,
                     file_path: args.file_path,

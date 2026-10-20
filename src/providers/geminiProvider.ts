@@ -3,6 +3,7 @@ import { Message, ModelInfo, StreamChunk } from '../types';
 import { HttpService } from '../utils/http';
 import { McpService } from '../services/mcpService';
 import { SubagentService } from '../services/subagentService';
+import { ToolCacheService } from '../services/toolCacheService';
 
 export class GeminiProvider extends BaseProvider {
     constructor() {
@@ -47,7 +48,7 @@ export class GeminiProvider extends BaseProvider {
         messages: Message[], 
         modelId: string, 
         signal?: AbortSignal, 
-        options?: { isSubagent?: boolean }
+        options?: { isSubagent?: boolean; maxToolTurns?: number }
     ): AsyncGenerator<StreamChunk, void, unknown> {
         const apiKey = await this.getApiKey();
         if (!apiKey) { throw new Error('Gemini API key not found'); }
@@ -55,7 +56,7 @@ export class GeminiProvider extends BaseProvider {
         const baseUrl = this.getBaseUrl();
         const isSubagent = !!options?.isSubagent || SubagentService.isInsideSubagent();
         const allTools = await McpService.getActiveTools({ isSubagent });
-        const maxToolTurns = isSubagent ? 3 : 25;
+        const maxToolTurns = options?.maxToolTurns ?? (isSubagent ? 12 : 35);
         const contents: any[] = messages.filter(m => m.role !== 'system').map(m => ({
             role: m.role === 'assistant' ? 'model' : 'user',
             parts: [{ text: m.content }]
@@ -180,31 +181,38 @@ export class GeminiProvider extends BaseProvider {
                     parts: modelParts
                 });
 
-                const functionResponses: any[] = [];
                 for (const call of functionCalls) {
                     yield { text: `\n\n> <span class="material-symbols-outlined" style="font-size:16px;vertical-align:-3px;color:#a78bfa">settings</span> *Executing tool \`${call.name}\`...*\n\n`, done: false };
-                    let result: any;
-                    try {
-                        result = await McpService.executeTool(call.name, call.args || {});
-                    } catch (err: any) {
-                        result = { error: err.message };
-                    }
-
-                    let responsePayload = typeof result === 'object' && result !== null ? result : { result };
-                    const strRep = JSON.stringify(responsePayload);
-                    if (strRep.length > 8000) {
-                        responsePayload = {
-                            result: (typeof result === 'string' ? result.substring(0, 8000) : strRep.substring(0, 8000)) + '\n... [Remaining output truncated to protect context window]'
-                        };
-                    }
-
-                    functionResponses.push({
-                        functionResponse: {
-                            name: call.name,
-                            response: responsePayload
-                        }
-                    });
                 }
+
+                const functionResponses = await Promise.all(
+                    functionCalls.map(async (call) => {
+                        let result: any;
+                        try {
+                            result = await McpService.executeTool(call.name, call.args || {});
+                        } catch (err: any) {
+                            result = { error: err.message };
+                        }
+
+                        let responsePayload = typeof result === 'object' && result !== null ? result : { result };
+                        const strRep = JSON.stringify(responsePayload);
+                        if (strRep.length > 8000) {
+                            responsePayload = {
+                                result: ToolCacheService.smartTruncate(
+                                    typeof result === 'string' ? result : strRep,
+                                    8000
+                                )
+                            };
+                        }
+
+                        return {
+                            functionResponse: {
+                                name: call.name,
+                                response: responsePayload
+                            }
+                        };
+                    })
+                );
 
                 // Tool results go back as a single 'user' turn (Gemini requirement)
                 currentContents.push({

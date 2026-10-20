@@ -26,7 +26,7 @@ export abstract class BaseProvider {
         messages: Message[], 
         modelId: string, 
         signal?: AbortSignal, 
-        options?: { isSubagent?: boolean }
+        options?: { isSubagent?: boolean; maxToolTurns?: number }
     ): AsyncGenerator<StreamChunk, void, unknown>;
     
     public async ping(): Promise<boolean> {

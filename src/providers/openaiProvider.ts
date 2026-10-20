@@ -3,6 +3,7 @@ import { Message, ModelInfo, StreamChunk } from '../types';
 import { HttpService } from '../utils/http';
 import { McpService } from '../services/mcpService';
 import { SubagentService } from '../services/subagentService';
+import { ToolCacheService } from '../services/toolCacheService';
 
 export class OpenAIProvider extends BaseProvider {
     constructor(config?: any) {
@@ -49,7 +50,7 @@ export class OpenAIProvider extends BaseProvider {
         messages: Message[], 
         modelId: string, 
         signal?: AbortSignal, 
-        options?: { isSubagent?: boolean }
+        options?: { isSubagent?: boolean; maxToolTurns?: number }
     ): AsyncGenerator<StreamChunk, void, unknown> {
         const apiKey = await this.getApiKey();
         if (this.config.apiKeyRequired && !apiKey) { throw new Error(`${this.config.name} API key not found`); }
@@ -57,7 +58,7 @@ export class OpenAIProvider extends BaseProvider {
         const baseUrl = this.getBaseUrl();
         const isSubagent = !!options?.isSubagent || SubagentService.isInsideSubagent();
         const allTools = await McpService.getActiveTools({ isSubagent });
-        const maxToolTurns = isSubagent ? 3 : 25;
+        const maxToolTurns = options?.maxToolTurns ?? (isSubagent ? 12 : 35);
         const currentMessages: any[] = [...messages];
         let toolCallCount = 0;
         let totalGeneratedContent = 0;
@@ -142,28 +143,34 @@ export class OpenAIProvider extends BaseProvider {
                 });
 
                 for (const tc of toolCalls) {
-                    const toolName = tc.function.name;
-                    yield { text: `\n\n> <span class="material-symbols-outlined" style="font-size:16px;vertical-align:-3px;color:#a78bfa">settings</span> *Executing tool \`${toolName}\`...*\n\n`, done: false };
+                    yield { text: `\n\n> <span class="material-symbols-outlined" style="font-size:16px;vertical-align:-3px;color:#a78bfa">settings</span> *Executing tool \`${tc.function.name}\`...*\n\n`, done: false };
+                }
 
-                    try {
-                        const args = tc.function.arguments ? JSON.parse(tc.function.arguments) : {};
-                        const result = await McpService.executeTool(toolName, args);
-                        let contentStr = typeof result === 'string' ? result : JSON.stringify(result);
-                        if (contentStr.length > 8000) {
-                            contentStr = contentStr.substring(0, 8000) + '\n... [Remaining output truncated to protect context window]';
+                const toolResults = await Promise.all(
+                    toolCalls.map(async (tc) => {
+                        const toolName = tc.function.name;
+                        try {
+                            const args = tc.function.arguments ? JSON.parse(tc.function.arguments) : {};
+                            const result = await McpService.executeTool(toolName, args);
+                            let contentStr = typeof result === 'string' ? result : JSON.stringify(result);
+                            contentStr = ToolCacheService.smartTruncate(contentStr, 8000);
+                            return {
+                                role: 'tool',
+                                tool_call_id: tc.id,
+                                content: contentStr
+                            };
+                        } catch (err: any) {
+                            return {
+                                role: 'tool',
+                                tool_call_id: tc.id,
+                                content: `Error executing tool: ${err.message}`
+                            };
                         }
-                        currentMessages.push({
-                            role: 'tool',
-                            tool_call_id: tc.id,
-                            content: contentStr
-                        });
-                    } catch (err: any) {
-                        currentMessages.push({
-                            role: 'tool',
-                            tool_call_id: tc.id,
-                            content: `Error executing tool: ${err.message}`
-                        });
-                    }
+                    })
+                );
+
+                for (const tr of toolResults) {
+                    currentMessages.push(tr);
                 }
 
                 // Continue loop to send tool response back to model

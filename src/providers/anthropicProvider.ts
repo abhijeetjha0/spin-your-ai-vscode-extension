@@ -3,6 +3,7 @@ import { Message, ModelInfo, StreamChunk } from '../types';
 import { HttpService } from '../utils/http';
 import { McpService } from '../services/mcpService';
 import { SubagentService } from '../services/subagentService';
+import { ToolCacheService } from '../services/toolCacheService';
 
 export class AnthropicProvider extends BaseProvider {
     constructor() {
@@ -30,7 +31,7 @@ export class AnthropicProvider extends BaseProvider {
         messages: Message[], 
         modelId: string, 
         signal?: AbortSignal, 
-        options?: { isSubagent?: boolean }
+        options?: { isSubagent?: boolean; maxToolTurns?: number }
     ): AsyncGenerator<StreamChunk, void, unknown> {
         const apiKey = await this.getApiKey();
         if (!apiKey) { throw new Error('Anthropic API key not found'); }
@@ -38,7 +39,7 @@ export class AnthropicProvider extends BaseProvider {
         const baseUrl = this.getBaseUrl();
         const isSubagent = !!options?.isSubagent || SubagentService.isInsideSubagent();
         const allTools = await McpService.getActiveTools({ isSubagent });
-        const maxToolTurns = isSubagent ? 3 : 25;
+        const maxToolTurns = options?.maxToolTurns ?? (isSubagent ? 12 : 35);
         
         const systemMessages = messages.filter(m => m.role === 'system').map(m => m.content).join('\n');
         const currentMessages: any[] = messages.filter(m => m.role !== 'system').map(m => ({
@@ -125,7 +126,6 @@ export class AnthropicProvider extends BaseProvider {
                 }
 
                 const assistantContent: any[] = [];
-                const toolResults: any[] = [];
 
                 for (const tc of toolCallList) {
                     assistantContent.push({
@@ -136,26 +136,28 @@ export class AnthropicProvider extends BaseProvider {
                     });
 
                     yield { text: `\n\n> <span class="material-symbols-outlined" style="font-size:16px;vertical-align:-3px;color:#a78bfa">settings</span> *Executing tool \`${tc.name}\`...*\n\n`, done: false };
-
-                    let result: any;
-                    try {
-                        const args = tc.inputJson ? JSON.parse(tc.inputJson) : {};
-                        result = await McpService.executeTool(tc.name, args);
-                    } catch (err: any) {
-                        result = `Error: ${err.message}`;
-                    }
-
-                    let contentStr = typeof result === 'string' ? result : JSON.stringify(result);
-                    if (contentStr.length > 8000) {
-                        contentStr = contentStr.substring(0, 8000) + '\n... [Remaining output truncated to protect context window]';
-                    }
-
-                    toolResults.push({
-                        type: 'tool_result',
-                        tool_use_id: tc.id,
-                        content: contentStr
-                    });
                 }
+
+                const toolResults = await Promise.all(
+                    toolCallList.map(async (tc) => {
+                        let result: any;
+                        try {
+                            const args = tc.inputJson ? JSON.parse(tc.inputJson) : {};
+                            result = await McpService.executeTool(tc.name, args);
+                        } catch (err: any) {
+                            result = `Error: ${err.message}`;
+                        }
+
+                        let contentStr = typeof result === 'string' ? result : JSON.stringify(result);
+                        contentStr = ToolCacheService.smartTruncate(contentStr, 8000);
+
+                        return {
+                            type: 'tool_result',
+                            tool_use_id: tc.id,
+                            content: contentStr
+                        };
+                    })
+                );
 
                 currentMessages.push({
                     role: 'assistant',

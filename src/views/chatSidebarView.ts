@@ -451,7 +451,7 @@ export class ChatSidebarViewProvider implements vscode.WebviewViewProvider {
         try {
             const messagesPayload: Message[] = [];
             const userSystemMessage = ConfigService.get<string>('systemMessage') || '';
-            const subagentDirective = 'When using the spin_subagent tool, only spin the exact number of sub-agents requested by the user. Sub-agents are autonomous leaf workers. Once all requested sub-agents complete, synthesize their results and directly answer the user without spinning further sub-agents.';
+            const subagentDirective = 'When using the spin_subagent tool, only spin the exact number of sub-agents requested by the user. Sub-agents are autonomous leaf workers. Once all requested sub-agents complete, synthesize their results and directly answer the user without spinning further sub-agents. When multiple files or searches are needed, invoke tools in parallel in a single turn or use workspace_read_files to minimize round-trip turns.';
             const systemMessage = userSystemMessage ? `${userSystemMessage}\n\n${subagentDirective}` : subagentDirective;
             messagesPayload.push({ role: 'system', content: systemMessage });
 

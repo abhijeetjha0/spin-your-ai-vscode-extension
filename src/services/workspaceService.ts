@@ -165,6 +165,24 @@ export class WorkspaceService {
     }
 
     /**
+     * Reads multiple files from the workspace in parallel.
+     */
+    public static async readMultipleFiles(targetPaths: string[], maxBytesPerFile = 60000): Promise<Record<string, { content?: string; error?: string }>> {
+        const results: Record<string, { content?: string; error?: string }> = {};
+        await Promise.all(
+            targetPaths.map(async (targetPath) => {
+                try {
+                    const content = await this.readFile(targetPath, maxBytesPerFile);
+                    results[targetPath] = { content };
+                } catch (err: any) {
+                    results[targetPath] = { error: err.message };
+                }
+            })
+        );
+        return results;
+    }
+
+    /**
      * Lists files and folders in a given directory path.
      */
     public static async listDirectory(targetPath: string = '.'): Promise<{ name: string; isDirectory: boolean }[]> {

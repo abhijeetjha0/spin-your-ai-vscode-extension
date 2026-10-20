@@ -29,6 +29,7 @@ export interface SubagentExecutionOptions {
     provider?: any;
     modelId?: string;
     attachments?: Array<{ name: string; type: string; data: string }>;
+    maxTurns?: number;
 }
 
 export interface SubagentStatusPayload {
@@ -273,7 +274,7 @@ export class SubagentService {
             this.subagents.set(id, subagent);
 
             // Seed initial system context
-            let systemPrompt = `You are an autonomous specialized sub-agent for Spin Your AI. Role: ${subagent.role}.\nYour task is: ${subagent.task}.\nFocus strictly on your assigned task and provide a concise, accurate outcome.`;
+            let systemPrompt = `You are an autonomous specialized sub-agent for Spin Your AI. Role: ${subagent.role}.\nYour task is: ${subagent.task}.\nFocus strictly on your assigned task and provide a concise, accurate outcome. When reading multiple files or inspecting code, invoke tools in parallel in a single turn or use workspace_read_files to minimize turns.`;
             if (inheritedContext && !context) {
                 systemPrompt += `\n\n--- Inherited Context ---\n${inheritedContext}\n--- End Context ---`;
             }
@@ -327,7 +328,10 @@ export class SubagentService {
             let fullResponseText = '';
 
             if (provider && typeof provider.streamChat === 'function') {
-                const stream = provider.streamChat(messagesPayload, modelId, controller.signal, { isSubagent: true });
+                const stream = provider.streamChat(messagesPayload, modelId, controller.signal, {
+                    isSubagent: true,
+                    maxToolTurns: options.maxTurns || 12
+                });
                 for await (const chunk of stream) {
                     if (controller.signal.aborted) break;
                     fullResponseText += chunk.text;

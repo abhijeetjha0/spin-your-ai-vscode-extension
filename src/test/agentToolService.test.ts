@@ -16,12 +16,13 @@ describe('AgentToolService', () => {
 
     it('returns built-in workspace tool schemas', () => {
         const tools = AgentToolService.getToolDefinitions();
-        assert.strictEqual(tools.length, 7);
+        assert.strictEqual(tools.length, 8);
         const names = tools.map(t => t.function.name);
         assert.ok(names.includes('workspace_get_context'));
         assert.ok(names.includes('workspace_list_dir'));
         assert.ok(names.includes('workspace_search_files'));
         assert.ok(names.includes('workspace_read_file'));
+        assert.ok(names.includes('workspace_read_files'));
         assert.ok(names.includes('workspace_write_file'));
         assert.ok(names.includes('workspace_edit_file'));
         assert.ok(names.includes('spin_subagent'));
@@ -180,6 +181,54 @@ describe('AgentToolService', () => {
     it('handles resolvePermission with unknown requestId safely', () => {
         // Calling with unknown requestId should not throw
         assert.doesNotThrow(() => AgentToolService.resolvePermission('non-existent-id', true));
+    });
+
+    it('executes workspace_read_files batch reading in parallel', async () => {
+        await assert.rejects(
+            async () => AgentToolService.executeTool('workspace_read_files', {}),
+            /Missing or empty required argument: "file_paths"/
+        );
+
+        global.__vscodeMockState.files.set('/test/workspace/fileA.ts', 'export const a = 1;');
+        global.__vscodeMockState.files.set('/test/workspace/fileB.ts', 'export const b = 2;');
+
+        const res = await AgentToolService.executeTool('workspace_read_files', {
+            file_paths: ['fileA.ts', 'fileB.ts', 'missing.ts']
+        });
+
+        assert.ok(res.files);
+        assert.strictEqual(res.files['fileA.ts'].content, 'export const a = 1;');
+        assert.strictEqual(res.files['fileB.ts'].content, 'export const b = 2;');
+        assert.ok(res.files['missing.ts'].error, 'Missing file should capture error without crashing batch');
+    });
+
+    it('caches idempotent tool outputs and invalidates on workspace edits', async () => {
+        global.__vscodeMockState.files.set('/test/workspace/cached.txt', 'version 1');
+
+        // First call
+        const res1 = await AgentToolService.executeTool('workspace_read_file', { file_path: 'cached.txt' });
+        assert.strictEqual(res1.content, 'version 1');
+
+        // Modify underlying mock state directly without agent tool
+        global.__vscodeMockState.files.set('/test/workspace/cached.txt', 'version 2 (modified on disk)');
+
+        // Second call should return cached version 1
+        const res2 = await AgentToolService.executeTool('workspace_read_file', { file_path: 'cached.txt' });
+        assert.strictEqual(res2.content, 'version 1', 'Should return cached result');
+
+        // Mutating tool (workspace_write_file) invalidates cache
+        AgentToolService.setPermissionHandler(async (req) => {
+            AgentToolService.resolvePermission(req.requestId, true);
+            return true;
+        });
+        await AgentToolService.executeTool('workspace_write_file', {
+            file_path: 'other.txt',
+            content: 'new file'
+        });
+
+        // Now cache should be cleared and read should fetch updated content
+        const res3 = await AgentToolService.executeTool('workspace_read_file', { file_path: 'cached.txt' });
+        assert.strictEqual(res3.content, 'version 2 (modified on disk)', 'Should fetch fresh content after invalidation');
     });
 
     it('throws error for unknown workspace agent tool', async () => {
