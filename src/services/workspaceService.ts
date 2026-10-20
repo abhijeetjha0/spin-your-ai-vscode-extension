@@ -10,25 +10,109 @@ export interface FileDiffInfo {
 }
 
 export class WorkspaceService {
-    private static DEFAULT_EXCLUDES = [
-        '**/node_modules/**',
-        '**/.git/**',
-        '**/dist/**',
-        '**/out/**',
-        '**/build/**',
-        '**/.next/**',
-        '**/.cache/**',
-        '**/*.vsix',
-        '**/*.lock',
-        '**/package-lock.json',
-        '**/*.png',
-        '**/*.jpg',
-        '**/*.jpeg',
-        '**/*.ico',
-        '**/*.webp',
-        '**/*.woff*',
-        '**/*.ttf'
-    ];
+    /**
+     * Parses a single .gitignore line into corresponding glob pattern(s).
+     * Returns an empty array for comments, empty lines, negation patterns, or invalid patterns.
+     */
+    public static parseGitIgnoreLineToGlobs(line: string): string[] {
+        let trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith('#') || trimmed.startsWith('!')) {
+            return [];
+        }
+
+        // Unescape escaped hash or exclamation
+        if (trimmed.startsWith('\\#') || trimmed.startsWith('\\!')) {
+            trimmed = trimmed.slice(1);
+        }
+
+        let isDirOnly = false;
+        let clean = trimmed;
+
+        if (clean.endsWith('/')) {
+            isDirOnly = true;
+            clean = clean.slice(0, -1);
+        }
+
+        const isRootAnchored = clean.startsWith('/');
+        if (isRootAnchored) {
+            clean = clean.slice(1);
+        }
+
+        if (!clean || clean.includes('{') || clean.includes('}')) {
+            return [];
+        }
+
+        const globs: string[] = [];
+        const hasWildcard = clean.includes('*') || clean.includes('?');
+
+        if (isRootAnchored) {
+            if (isDirOnly) {
+                globs.push(`${clean}/**`);
+            } else if (hasWildcard && !clean.includes('/')) {
+                globs.push(clean);
+                globs.push(`${clean}/**`);
+            } else {
+                globs.push(`${clean}/**`);
+                globs.push(clean);
+            }
+        } else if (clean.startsWith('**/')) {
+            if (isDirOnly) {
+                globs.push(`${clean}/**`);
+            } else {
+                globs.push(`${clean}/**`);
+                globs.push(clean);
+            }
+        } else {
+            if (isDirOnly) {
+                globs.push(`**/${clean}/**`);
+            } else if (hasWildcard && !clean.includes('/')) {
+                globs.push(`**/${clean}`);
+                globs.push(`**/${clean}/**`);
+            } else {
+                globs.push(`**/${clean}/**`);
+                globs.push(`**/${clean}`);
+            }
+        }
+
+        return globs;
+    }
+
+    /**
+     * Reads the workspace's .gitignore file(s) and converts user-specified
+     * patterns into a glob exclude pattern string suitable for vscode.workspace.findFiles.
+     * Always ensures .git directory contents are excluded.
+     */
+    public static async getGitIgnoreExcludePattern(rootUri?: vscode.Uri): Promise<string> {
+        const globs = new Set<string>();
+        globs.add('**/.git/**');
+
+        const folders = rootUri
+            ? [{ uri: rootUri }]
+            : (vscode.workspace.workspaceFolders || []);
+
+        for (const folder of folders) {
+            try {
+                const gitIgnoreUri = vscode.Uri.joinPath(folder.uri, '.gitignore');
+                const raw = await vscode.workspace.fs.readFile(gitIgnoreUri);
+                const content = Buffer.from(raw).toString('utf8');
+                const lines = content.split(/\r?\n/);
+                for (const line of lines) {
+                    const parsed = this.parseGitIgnoreLineToGlobs(line);
+                    for (const g of parsed) {
+                        globs.add(g);
+                    }
+                }
+            } catch {
+                // .gitignore does not exist in this folder, continue safely
+            }
+        }
+
+        if (globs.size === 1) {
+            return Array.from(globs)[0];
+        }
+
+        return `{${Array.from(globs).join(',')}}`;
+    }
 
     /**
      * Returns true if there is an open workspace folder.
@@ -67,8 +151,8 @@ export class WorkspaceService {
             activeEditorInfo = `${rel} (${activeEditor.document.languageId}, ${activeEditor.document.lineCount} lines)`;
         }
 
-        // Fast file finding using VS Code's indexer
-        const excludePattern = `{${this.DEFAULT_EXCLUDES.join(',')}}`;
+        // Fast file finding using VS Code's indexer, respecting the user's .gitignore
+        const excludePattern = await this.getGitIgnoreExcludePattern(workspaceFolder.uri);
         const fileUris = await vscode.workspace.findFiles('**/*', excludePattern, maxFiles);
 
         const relativePaths = fileUris.map(uri => path.relative(rootPath, uri.fsPath)).sort();
@@ -211,7 +295,7 @@ export class WorkspaceService {
         }
 
         const includePattern = filePattern && filePattern.trim() ? filePattern.trim() : '**/*';
-        const excludePattern = '{**/node_modules/**,**/.git/**,**/dist/**,**/out/**,**/.vscode/**}';
+        const excludePattern = await this.getGitIgnoreExcludePattern();
         const files = await vscode.workspace.findFiles(includePattern, excludePattern, 200);
 
         if (!files || files.length === 0) {

@@ -37,7 +37,13 @@ Module.prototype.require = function(id) {
                 findFiles: async (include, exclude, maxResults) => {
                     const allKeys = Array.from(global.__vscodeMockState.files.keys());
                     const filtered = allKeys.filter(k => {
-                        if (exclude && exclude.includes('node_modules') && k.includes('node_modules')) return false;
+                        if (exclude) {
+                            if (exclude.includes('node_modules') && k.includes('node_modules')) return false;
+                            if (exclude.includes('.git') && k.includes('.git')) return false;
+                            if (exclude.includes('dist') && k.includes('/dist/')) return false;
+                            if (exclude.includes('coverage') && k.includes('/coverage/')) return false;
+                            if (exclude.includes('*.log') && k.endsWith('.log')) return false;
+                        }
                         if (typeof include === 'string') {
                             if (include.includes('.agents') && !k.includes('.agents')) return false;
                             if (include.includes('SKILL.md') && !k.endsWith('SKILL.md')) return false;

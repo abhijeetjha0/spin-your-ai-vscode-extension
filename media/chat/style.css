@@ -166,10 +166,20 @@ body {
   cursor: pointer;
   font-size: 16px;
   padding: 4px;
-  border-radius: 4px;
+  border-radius: 0;
   transition: color 0.2s;
 }
 .icon-btn:hover { color: var(--text-main); background: rgba(255,255,255,0.1); }
+
+/* Prevent child icons from capturing pointer events and resetting hover/tooltips */
+.icon-btn > *,
+.send-btn > *,
+.stop-btn > *,
+.remove-attachment > *,
+.subagent-terminate-btn > *,
+.subagent-context-toggle > * {
+  pointer-events: none;
+}
 
 .chat-area {
   flex: 1;
@@ -1083,5 +1093,31 @@ body {
   text-overflow: ellipsis;
   margin-top: 1px;
 }
+
+/* Terminal Tooltip */
+.terminal-tooltip {
+  position: fixed;
+  z-index: 10000;
+  background: #0a0a0a;
+  color: #f8fafc;
+  border: 1px solid #333333;
+  padding: 4px 8px;
+  font-family: var(--font-mono, 'Courier New', Courier, monospace);
+  font-size: 11px;
+  line-height: 1.2;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.9);
+  transition: opacity 0.08s ease, visibility 0.08s ease;
+  user-select: none;
+}
+
+.terminal-tooltip.visible {
+  opacity: 1;
+  visibility: visible;
+}
+
 
 

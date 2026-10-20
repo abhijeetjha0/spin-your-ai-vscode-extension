@@ -15,10 +15,18 @@ export function activate(context: vscode.ExtensionContext) {
     ProviderRegistry.initialize();
     Logger.log('Extension "spin-your-ai-vscode" is now active!');
 
-    // Register Chat Sidebar
+    // Register Chat Sidebar with retainContextWhenHidden so switching sidebar tabs preserves state
     const chatProvider = new ChatSidebarViewProvider(context.extensionUri, context);
     context.subscriptions.push(
-        vscode.window.registerWebviewViewProvider(ChatSidebarViewProvider.viewType, chatProvider)
+        vscode.window.registerWebviewViewProvider(
+            ChatSidebarViewProvider.viewType,
+            chatProvider,
+            {
+                webviewOptions: {
+                    retainContextWhenHidden: true
+                }
+            }
+        )
     );
 
     const extensionId = context.extension?.id || 'abhijeetjha0.spin-your-ai-vscode';

@@ -191,5 +191,79 @@ describe('WorkspaceService', () => {
         const limitedRes = await WorkspaceService.searchFiles('login', undefined, 1);
         assert.ok(limitedRes.includes('Found 1 match(es) for "login":'));
     });
+
+    it('parses .gitignore lines into globs accurately', () => {
+        // Comments, empty lines, negation
+        assert.deepStrictEqual(WorkspaceService.parseGitIgnoreLineToGlobs('# comment'), []);
+        assert.deepStrictEqual(WorkspaceService.parseGitIgnoreLineToGlobs(''), []);
+        assert.deepStrictEqual(WorkspaceService.parseGitIgnoreLineToGlobs('   '), []);
+        assert.deepStrictEqual(WorkspaceService.parseGitIgnoreLineToGlobs('!keep.txt'), []);
+
+        // Directory only (trailing slash)
+        assert.deepStrictEqual(WorkspaceService.parseGitIgnoreLineToGlobs('node_modules/'), ['**/node_modules/**']);
+        assert.deepStrictEqual(WorkspaceService.parseGitIgnoreLineToGlobs('/out/'), ['out/**']);
+
+        // Root anchored
+        assert.deepStrictEqual(WorkspaceService.parseGitIgnoreLineToGlobs('/dist'), ['dist/**', 'dist']);
+        assert.deepStrictEqual(WorkspaceService.parseGitIgnoreLineToGlobs('/build/Release'), ['build/Release/**', 'build/Release']);
+
+        // Wildcards
+        assert.deepStrictEqual(WorkspaceService.parseGitIgnoreLineToGlobs('*.log'), ['**/*.log', '**/*.log/**']);
+        assert.deepStrictEqual(WorkspaceService.parseGitIgnoreLineToGlobs('*.vsix'), ['**/*.vsix', '**/*.vsix/**']);
+
+        // Subdirectories without leading slash
+        assert.deepStrictEqual(WorkspaceService.parseGitIgnoreLineToGlobs('build/Release'), ['**/build/Release/**', '**/build/Release']);
+
+        // Already with glob prefix
+        assert.deepStrictEqual(WorkspaceService.parseGitIgnoreLineToGlobs('**/.vitepress/dist'), ['**/.vitepress/dist/**', '**/.vitepress/dist']);
+
+        // Malformed braces
+        assert.deepStrictEqual(WorkspaceService.parseGitIgnoreLineToGlobs('foo{a,b}'), []);
+    });
+
+    it('reads .gitignore and dynamically creates exclude pattern', async () => {
+        // Without .gitignore, defaults to **/.git/**
+        const defaultExcludes = await WorkspaceService.getGitIgnoreExcludePattern();
+        assert.strictEqual(defaultExcludes, '**/.git/**');
+
+        // With .gitignore present in workspace
+        const gitIgnoreContent = '# Comment\nnode_modules/\ndist/\n*.log\n/out\n!keep.txt\n';
+        global.__vscodeMockState.files.set('/test/workspace/.gitignore', gitIgnoreContent);
+
+        const pattern = await WorkspaceService.getGitIgnoreExcludePattern();
+        assert.ok(pattern.includes('**/.git/**'));
+        assert.ok(pattern.includes('**/node_modules/**'));
+        assert.ok(pattern.includes('**/dist/**'));
+        assert.ok(pattern.includes('**/*.log'));
+        assert.ok(pattern.includes('out/**'));
+        assert.strictEqual(pattern.includes('!keep.txt'), false);
+    });
+
+    it('respects .gitignore patterns when fetching files for context and search', async () => {
+        // Define user's gitignore
+        global.__vscodeMockState.files.set(
+            '/test/workspace/.gitignore',
+            'node_modules/\ndist/\n*.log\n'
+        );
+
+        // Define files
+        global.__vscodeMockState.files.set('/test/workspace/src/app.ts', 'const app = "login";');
+        global.__vscodeMockState.files.set('/test/workspace/dist/bundle.js', 'const bundle = "login";');
+        global.__vscodeMockState.files.set('/test/workspace/node_modules/pkg/index.js', 'const pkg = "login";');
+        global.__vscodeMockState.files.set('/test/workspace/debug.log', 'login error in log');
+
+        // Context fetching should exclude gitignored files
+        const ctx = await WorkspaceService.getWorkspaceContext(10);
+        assert.ok(ctx.includes('app.ts'));
+        assert.strictEqual(ctx.includes('bundle.js'), false);
+        assert.strictEqual(ctx.includes('pkg/index.js'), false);
+
+        // Search fetching should exclude gitignored files
+        const searchRes = await WorkspaceService.searchFiles('login');
+        assert.ok(searchRes.includes('src/app.ts:1: const app = "login";'));
+        assert.strictEqual(searchRes.includes('dist/bundle.js'), false);
+        assert.strictEqual(searchRes.includes('node_modules'), false);
+    });
 });
+
 

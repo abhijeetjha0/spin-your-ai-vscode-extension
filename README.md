@@ -1,21 +1,28 @@
 # Spin Your AI for VSCode
 
+[![Coverage](https://img.shields.io/badge/coverage-90%25%2B-brightgreen.svg)](#)
+[![Tests](https://img.shields.io/badge/tests-75%2F75%20passing-brightgreen.svg)](#)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.9-blue.svg)](#)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](#)
+
 Spin up AI models from your editor, powered by local AI, cloud frontiers, and Model Context Protocol (MCP) agents.
 
 ## Features
 
-- **Multi-Provider Support**: Switch seamlessly between local models (Ollama, Hermes, OpenCode, OpenClaw), MCP servers, and cloud frontiers (OpenAI, Anthropic, Gemini, OpenRouter, OpenCode Zen, Hugging Face, Ollama Cloud).
-- **Sidebar Chat**: Native-feeling Webview chat interface with streaming responses, conversation history, and quick model reloads.
-- **Context Injection & Workspace Awareness**: Use `@file` to inject active document content, and `@workspace` to scan and feed your full directory tree and workspace hierarchy to any LLM.
-- **Built-in Workspace Agent Tools**: Tool-capable models (OpenAI, Gemini, Anthropic, Ollama Cloud, OpenRouter) can inspect files, list directories, and propose code changes.
+- **Multi-Provider Support**: Switch seamlessly between local models (Ollama, Hermes Desktop, OpenCode, OpenClaw), MCP servers, and cloud frontiers (OpenAI, Anthropic, Gemini, OpenRouter, OpenCode Zen, Hugging Face, Ollama Cloud).
+- **Persistent Sidebar Chat with Context Retention**: Native-feeling Webview chat interface with streaming responses, conversation history, and quick model switching. Built with `retainContextWhenHidden` and in-flight stream synchronization, ensuring you never lose context, active streaming tokens, or mid-process analysis when navigating between Activity Bar views (Explorer, Git, Search).
+- **Context Injection & Workspace Awareness**: Use `@file` to inject active document content, and `@workspace` to scan and feed your full directory tree and workspace hierarchy to any model.
+- **Built-in Workspace Agent Tools**: Tool-capable models can inspect files, list directories, search files across the workspace, and propose code changes using built-in agent tools (`workspace_search_files`, `workspace_get_context`, `workspace_list_dir`, `workspace_read_file`, `workspace_read_files`, `workspace_write_file`, `workspace_edit_file`).
 - **Strict Permission-First Control**: No files are modified without your consent. Proposed changes display an interactive unified diff preview with **Approve** and **Reject** buttons directly in the chat sidebar.
-- **Chat & Context Compaction**: Condense verbose earlier turns into an executive summary on demand or automatically, slashing token consumption and latency just like Claude, Gemini, and ChatGPT.
-- **Multimodal Sub-Agent Structure & Live Monitor**: The model can autonomously spin up specialized sub-agents with preserved conversation context for focused multimodal sub-tasks (image/diagram analysis, workspace search, security audits). The UI header features a live counter badge (`N Working`) with an interactive monitor modal to review sub-agent progress and inspect internal context.
-- **Editor Integration**: Highlight code and right-click to Explain, Refactor, or Fix Bugs.
+- **Parallel File Reading & Smart Tool Caching**: Batch-read multiple workspace files in parallel (`workspace_read_files`). Idempotent read operations are cached in memory via `ToolCacheService`, with automatic cache invalidation upon approved file edits. Oversized file reads are safely truncated while preserving both head and tail lines.
+- **Multimodal Sub-Agent Structure & Live Monitor**: The model can autonomously spin up specialized sub-agents (`spin_subagent`) with preserved conversation context for focused multimodal sub-tasks (image/diagram analysis, workspace search, security audits). The UI header features a live counter badge (`N Working`) with an interactive monitor modal to review sub-agent reasoning, inspect context history, and force-kill active workers.
+- **Slash Commands & Dynamic Workspace Skills**: Type `/` in the chat input to access an autocomplete popover with fuzzy filtering. Supports built-in shortcuts (`/help`, `/clear`, `/history`, `/compact`, `/subagents`, `/settings`, `/explain`, `/refactor`, `/fix`) and dynamically discovers workspace skills from `.agents/skills/**/SKILL.md` by parsing YAML frontmatter.
+- **Chat & Context Compaction**: Condense verbose earlier turns into an executive summary on demand (via `/compact` or the UI badge) or automatically when exceeding turn or token thresholds, slashing token consumption and latency while preserving full conversation context.
+- **Multi-Session Chat & JSON Export**: Create, rename, switch between, and reset multiple named chat sessions stored in workspace state. Export conversation histories to standard OpenAI messages JSON format.
+- **Editor Context Menu Integration**: Highlight code in any editor and right-click to **Explain Code**, **Refactor Code**, or **Fix Bug** with rich system prompts and automated buffered sending.
 - **Secure Key Storage**: API keys are encrypted in your OS native keychain (macOS Keychain, Windows Credential Manager, Linux Secret Service) via VS Code's `SecretStorage` API.
-- **Zero Config Local**: Connects directly to Ollama at `localhost:11434` out of the box.
-- **Model Context Protocol (MCP)**: Native HTTP/SSE endpoint support for MCP tool servers.
-- **Local Autonomous Agents**: Direct integration for Hermes, OpenCode (with Basic Auth support), and OpenClaw endpoints.
+- **Zero-Config Local**: Connects directly to local Ollama at `localhost:11434` out of the box with optional custom endpoint configurations.
+- **Model Context Protocol (MCP)**: Native support for both **HTTP/SSE** and **STDIO** MCP tool servers configured via `mcp_config.json`.
 
 ## Getting Started
 
@@ -55,7 +62,7 @@ All commands are prefixed with **Spin Your AI**:
 
 ### Model Endpoints & MCP
 - `Spin Your AI: Configure Ollama Endpoint`: Set custom Ollama host/port (default `http://localhost:11434`).
-- `Spin Your AI: Edit MCP Configuration (JSON)`: Configure external MCP tool servers (e.g., `n8n-mcp`) via editable `mcp_config.json`.
+- `Spin Your AI: Edit MCP Configuration (JSON)`: Configure external MCP tool servers via editable `mcp_config.json`.
 - `Spin Your AI: Configure Hermes Endpoint`: Set Hermes agent endpoint (default `http://localhost:8642/v1`).
 - `Spin Your AI: Configure OpenCode Endpoint`: Set OpenCode endpoint (default `http://localhost:3000` or `http://localhost:4096`).
 - `Spin Your AI: Configure OpenClaw Endpoint`: Set OpenClaw agent endpoint (default `http://localhost:3141`).
@@ -63,55 +70,31 @@ All commands are prefixed with **Spin Your AI**:
 ## Development
 
 ### Prerequisites
-
 - Node.js 18+
 - npm
 
 Install dependencies:
-
 ```bash
 npm install
 ```
 
-### Build Scripts
+### Build & Test Scripts
 
 | Script | Command | Description |
 |---|---|---|
-| **check-types** | `npm run check-types` | Runs `tsc --noEmit` to type-check all TypeScript source files without emitting any output. Run this to catch type errors early. |
-| **lint** | `npm run lint` | Runs ESLint across `src/` to enforce code style and catch common issues. |
-| **compile** | `npm run compile` | Full development build: type-checks → lints → bundles `src/extension.ts` into `dist/extension.js` via esbuild (with source maps, unminified). |
-| **watch** | `npm run watch` | Runs esbuild and tsc in parallel watch modes. Use this during active development — rebuilds automatically on every file save. |
-| **watch:esbuild** | `npm run watch:esbuild` | Runs only the esbuild bundler in watch mode (faster, skips tsc type checking). |
-| **watch:tsc** | `npm run watch:tsc` | Runs only the TypeScript compiler in watch mode for type checking (no emit). |
-| **package** | `npm run package` | Production build: type-checks → lints → bundles with esbuild in `--production` mode (minified, no source maps). Output: `dist/extension.js`. Called automatically by `vscode:prepublish` before publishing. |
-| **build:vsix** | `npm run build:vsix` | Packages the extension into a `.vsix` installer file using `vsce`. Run `package` first. Install locally with `code --install-extension <file>.vsix`. |
-| **publish:vsx** | `npm run publish:vsx` | Publishes the extension to the Open VSX Registry (for VS Codium and other non-Microsoft marketplaces) using `ovsx`. |
-| **compile-tests** | `npm run compile-tests` | Compiles the test suite using `tsc` into the `out/` directory. |
-| **watch-tests** | `npm run watch-tests` | Watches and recompiles the test suite on change. |
-| **pretest** | `npm run pretest` | Automatically runs before `npm test`: compiles tests, compiles extension, and lints. |
-| **test** | `npm test` | Runs the extension test suite using `@vscode/test-cli`. |
+| **check-types** | `npm run check-types` | Runs `tsc --noEmit` to type-check all TypeScript source files. |
+| **lint** | `npm run lint` | Runs ESLint across `src/` to enforce code style. |
+| **compile** | `npm run compile` | Full development build: type-checks → lints → bundles `src/extension.ts` into `dist/extension.js` via esbuild. |
+| **watch** | `npm run watch` | Runs esbuild and tsc in parallel watch modes for active development. |
+| **package** | `npm run package` | Production build: minifies and bundles with esbuild for distribution. |
+| **test** | `npm test` | Compiles tests, runs linter, and executes full Mocha + c8 coverage test suite. |
+| **build:vsix** | `npm run build:vsix` | Packages the extension into a `.vsix` installer file using `vsce`. |
 
-### Typical Workflows
-
-**Active development (recommended):**
-```bash
-npm run watch
-```
-Then press `F5` in VS Code to launch the Extension Development Host.
-
-**Before committing:**
-```bash
-npm run compile
-```
-
-**Build and install locally:**
+### Packaging and Local Installation
 ```bash
 npm run build:vsix
 code --install-extension spin-your-ai-vscode-*.vsix
 ```
 
-**Publish a release:**
-```bash
-npm run build:vsix     # Creates the .vsix archive
-npm run publish:vsx    # Publishes to Open VSX Registry
-```
+## License
+MIT

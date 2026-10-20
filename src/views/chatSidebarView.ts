@@ -33,6 +33,7 @@ export class ChatSidebarViewProvider implements vscode.WebviewViewProvider {
     private _sessions: ChatSession[] = [];
     private _currentSessionId: string | null = null;
     private _currentAbortController?: AbortController;
+    private _currentStreamingText: string = '';
 
     constructor(
         private readonly _extensionUri: vscode.Uri,
@@ -76,13 +77,21 @@ export class ChatSidebarViewProvider implements vscode.WebviewViewProvider {
         webviewView.onDidChangeVisibility(() => {
             if (webviewView.visible) {
                 this.sendModels();
-                this.restoreHistory();
+                if (this._currentAbortController) {
+                    this.syncActiveStreamToWebview();
+                } else {
+                    this.restoreHistory();
+                }
             }
         });
 
         // Initialize state for webview
         this.sendModels();
-        this.restoreHistory();
+        if (this._currentAbortController) {
+            this.syncActiveStreamToWebview();
+        } else {
+            this.restoreHistory();
+        }
 
         // Connect built-in agent tool permission requests to this webview
         AgentToolService.setPermissionHandler(async (req) => {
@@ -120,7 +129,11 @@ export class ChatSidebarViewProvider implements vscode.WebviewViewProvider {
                     await this.sendModels();
                     break;
                 case 'getHistory':
-                    this.restoreHistory();
+                    if (this._currentAbortController) {
+                        this.syncActiveStreamToWebview();
+                    } else {
+                        this.restoreHistory();
+                    }
                     break;
                 case 'clearHistory':
                     this.clearHistory();
@@ -137,7 +150,9 @@ export class ChatSidebarViewProvider implements vscode.WebviewViewProvider {
                 case 'stopGeneration':
                     if (this._currentAbortController) {
                         this._currentAbortController.abort();
+                        this._currentAbortController = undefined;
                     }
+                    this._currentStreamingText = '';
                     SubagentService.terminateAllActive();
                     break;
                 case 'compactContext':
@@ -223,14 +238,27 @@ export class ChatSidebarViewProvider implements vscode.WebviewViewProvider {
     private restoreHistory() {
         if (!this._view) { return; }
         const currentSession = this._sessions.find(s => s.id === this._currentSessionId);
-        this._view.webview.postMessage({
+        this.sendMessageToWebview({
             type: 'restoreHistory',
             history: this.currentHistory,
             sessions: this._sessions,
             currentSessionId: this._currentSessionId,
             compactedSummary: currentSession?.compactedSummary,
             compactedCount: currentSession?.compactedCount,
-            savedTokens: currentSession?.savedTokens
+            savedTokens: currentSession?.savedTokens,
+            isGenerating: !!this._currentAbortController
+        });
+    }
+
+    private syncActiveStreamToWebview() {
+        if (!this._view) { return; }
+        this.sendMessageToWebview({
+            type: 'syncActiveStream',
+            text: this._currentStreamingText,
+            activeCount: SubagentService.getActiveCount(),
+            subagents: SubagentService.getSubagents(),
+            isGenerating: !!this._currentAbortController,
+            history: this.currentHistory
         });
     }
 
@@ -273,6 +301,7 @@ export class ChatSidebarViewProvider implements vscode.WebviewViewProvider {
             this._currentAbortController.abort();
             this._currentAbortController = undefined;
         }
+        this._currentStreamingText = '';
         SubagentService.clearSubagents();
         this.saveHistory();
         this.restoreHistory();
@@ -344,7 +373,7 @@ export class ChatSidebarViewProvider implements vscode.WebviewViewProvider {
             activeModel = undefined;
         }
 
-        this._view.webview.postMessage({
+        this.sendMessageToWebview({
             type: 'setModels',
             providers: providersMap,
             activeModel
@@ -408,7 +437,7 @@ export class ChatSidebarViewProvider implements vscode.WebviewViewProvider {
 
         const provider = ProviderRegistry.getProvider(providerId);
         if (!provider) {
-            this._view.webview.postMessage({ type: 'error', message: 'Provider not found or not configured.' });
+            this.sendMessageToWebview({ type: 'error', message: 'Provider not found or not configured.' });
             return;
         }
 
@@ -428,7 +457,7 @@ export class ChatSidebarViewProvider implements vscode.WebviewViewProvider {
                 createdAt: Date.now(),
                 history: []
             });
-            this._view?.webview.postMessage({
+            this.sendMessageToWebview({
                 type: 'updateSessions',
                 sessions: this._sessions,
                 currentSessionId: this._currentSessionId
@@ -447,6 +476,7 @@ export class ChatSidebarViewProvider implements vscode.WebviewViewProvider {
 
         this._currentAbortController = new AbortController();
         let fullResponseText = '';
+        this._currentStreamingText = '';
 
         try {
             const messagesPayload: Message[] = [];
@@ -510,7 +540,8 @@ export class ChatSidebarViewProvider implements vscode.WebviewViewProvider {
             
             for await (const chunk of stream) {
                 fullResponseText += chunk.text;
-                this._view.webview.postMessage({ 
+                this._currentStreamingText = fullResponseText;
+                this.sendMessageToWebview({ 
                     type: 'streamChunk', 
                     text: chunk.text, 
                     done: chunk.done 
@@ -531,14 +562,15 @@ export class ChatSidebarViewProvider implements vscode.WebviewViewProvider {
         } catch (error: any) {
             if (!this._currentAbortController?.signal.aborted) {
                 Logger.error('Chat error', error);
-                this._view.webview.postMessage({ type: 'error', message: error.message });
+                this.sendMessageToWebview({ type: 'error', message: error.message });
             }
         } finally {
             if (this._currentAbortController?.signal.aborted) {
-                this._view.webview.postMessage({ type: 'streamChunk', text: '\n\n**[Aborted by user]**', done: true });
+                this.sendMessageToWebview({ type: 'streamChunk', text: '\n\n**[Aborted by user]**', done: true });
             } else {
-                this._view.webview.postMessage({ type: 'streamChunk', text: '', done: true });
+                this.sendMessageToWebview({ type: 'streamChunk', text: '', done: true });
             }
+            this._currentStreamingText = '';
             this._currentAbortController = undefined;
         }
     }
@@ -598,7 +630,7 @@ export class ChatSidebarViewProvider implements vscode.WebviewViewProvider {
                 <div class="app-container">
                     <header class="header glassmorphism">
                         <div class="header-left" style="margin-right: 12px; display: flex; align-items: center;">
-                            <button id="sessions-btn" class="icon-btn" title="Chat History"><span class="material-symbols-outlined">history</span></button>
+                            <button id="sessions-btn" class="icon-btn" title="Chat History" data-tooltip="Chat History"><span class="material-symbols-outlined">history</span></button>
                         </div>
                         <div class="model-combobox" id="model-combobox">
                             <div class="model-combobox-trigger" id="model-trigger">
@@ -615,12 +647,12 @@ export class ChatSidebarViewProvider implements vscode.WebviewViewProvider {
                             </div>
                         </div>
                         <div class="header-actions">
-                            <button id="compact-btn" class="icon-btn" title="Compact Context (Save Tokens)"><span class="material-symbols-outlined">compress</span></button>
-                            <button id="reload-models-btn" class="icon-btn" title="Reload Models"><span class="material-symbols-outlined">refresh</span></button>
-                            <button id="export-chat-btn" class="icon-btn" title="Export Chat"><span class="material-symbols-outlined">download</span></button>
-                            <button id="new-chat-btn" class="icon-btn" title="New Chat"><span class="material-symbols-outlined">add</span></button>
-                            <button id="help-btn" class="icon-btn" title="Help"><span class="material-symbols-outlined">help</span></button>
-                            <button id="options-btn" class="icon-btn" title="Settings"><span class="material-symbols-outlined">settings</span></button>
+                            <button id="compact-btn" class="icon-btn" title="Compact Context (Save Tokens)" data-tooltip="Compact Context (Save Tokens)"><span class="material-symbols-outlined">compress</span></button>
+                            <button id="reload-models-btn" class="icon-btn" title="Reload Models" data-tooltip="Reload Models"><span class="material-symbols-outlined">refresh</span></button>
+                            <button id="export-chat-btn" class="icon-btn" title="Export Chat" data-tooltip="Export Chat"><span class="material-symbols-outlined">download</span></button>
+                            <button id="new-chat-btn" class="icon-btn" title="New Chat" data-tooltip="New Chat"><span class="material-symbols-outlined">add</span></button>
+                            <button id="help-btn" class="icon-btn" title="Help" data-tooltip="Help"><span class="material-symbols-outlined">help</span></button>
+                            <button id="options-btn" class="icon-btn" title="Settings" data-tooltip="Settings"><span class="material-symbols-outlined">settings</span></button>
                         </div>
                     </header>
 
@@ -650,15 +682,15 @@ export class ChatSidebarViewProvider implements vscode.WebviewViewProvider {
                         </div>
                         <div id="attachment-preview" class="attachment-preview hidden"></div>
                         <div class="input-wrapper">
-                            <button id="attach-btn" class="icon-btn" title="Attach file">
+                            <button id="attach-btn" class="icon-btn" title="Attach file" data-tooltip="Attach file">
                                 <span class="material-symbols-outlined">attach_file</span>
                             </button>
                             <input type="file" id="file-input" class="hidden" multiple accept="image/*,audio/*,video/*,.pdf,.html,.htm,.css,.js,.ts,.json,.xml,.csv,.txt,.md,.py,.java,.c,.cpp,.go,.rs,.rb,.sh">
                             <textarea id="chat-input" placeholder="Ask anything... (/ for commands &amp; skills)" rows="1"></textarea>
-                            <button id="send-btn" class="send-btn" title="Send message">
+                            <button id="send-btn" class="send-btn" title="Send message" data-tooltip="Send message">
                                 <span class="material-symbols-outlined">send</span>
                             </button>
-                            <button id="stop-btn" class="stop-btn hidden" title="Stop generation">
+                            <button id="stop-btn" class="stop-btn hidden" title="Stop generation" data-tooltip="Stop generation">
                                 <span class="material-symbols-outlined">stop_circle</span>
                             </button>
                         </div>
@@ -669,7 +701,7 @@ export class ChatSidebarViewProvider implements vscode.WebviewViewProvider {
                     <div class="modal-content">
                         <div class="modal-header">
                             <h2 style="font-size: 16px; color: var(--text-main);">Chat History</h2>
-                            <button id="close-sessions-btn" class="icon-btn"><span class="material-symbols-outlined">close</span></button>
+                            <button id="close-sessions-btn" class="icon-btn" title="Close" data-tooltip="Close"><span class="material-symbols-outlined">close</span></button>
                         </div>
                         <div id="sessions-list" class="modal-body sessions-list" style="max-height: 400px; overflow-y: auto;"></div>
                     </div>
@@ -684,8 +716,8 @@ export class ChatSidebarViewProvider implements vscode.WebviewViewProvider {
                                 <h2 style="font-size: 13px; color: var(--text-main); font-weight: bold; letter-spacing: 0.08em; margin: 0;">SUB-AGENTS MONITOR</h2>
                             </div>
                             <div style="display: flex; align-items: center; gap: 6px;">
-                                <button id="clear-subagents-btn" class="icon-btn" title="Reset Inactive Sub-Agents"><span class="material-symbols-outlined">delete_sweep</span></button>
-                                <button id="close-subagents-btn" class="icon-btn" title="Close"><span class="material-symbols-outlined">close</span></button>
+                                <button id="clear-subagents-btn" class="icon-btn" title="Reset Inactive Sub-Agents" data-tooltip="Reset Inactive Sub-Agents"><span class="material-symbols-outlined">delete_sweep</span></button>
+                                <button id="close-subagents-btn" class="icon-btn" title="Close" data-tooltip="Close"><span class="material-symbols-outlined">close</span></button>
                             </div>
                         </div>
                         <div class="modal-body subagents-list-body" id="subagents-list-container">

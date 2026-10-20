@@ -468,6 +468,35 @@ export class SettingsPanel {
       border-color: var(--text-main);
     }
 
+    .icon-btn > * {
+      pointer-events: none;
+    }
+
+    /* Terminal Tooltip */
+    .terminal-tooltip {
+      position: fixed;
+      z-index: 10000;
+      background: #0a0a0a;
+      color: #f8fafc;
+      border: 1px solid #333333;
+      padding: 4px 8px;
+      font-family: var(--font-mono, 'Courier New', Courier, monospace);
+      font-size: 11px;
+      line-height: 1.2;
+      white-space: nowrap;
+      pointer-events: none;
+      opacity: 0;
+      visibility: hidden;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.9);
+      transition: opacity 0.08s ease, visibility 0.08s ease;
+      user-select: none;
+    }
+
+    .terminal-tooltip.visible {
+      opacity: 1;
+      visibility: visible;
+    }
+
     .actions {
       display: flex;
       justify-content: flex-end;
@@ -696,7 +725,7 @@ export class SettingsPanel {
               <label>Password</label>
               <div class="input-row">
                 <input type="password" id="opencode-key" placeholder="Enter password...">
-                <button type="button" class="icon-btn" onclick="togglePeek('opencode-key', this)"><span class="material-symbols-outlined">visibility</span></button>
+                <button type="button" class="icon-btn" onclick="togglePeek('opencode-key', this)" title="Show/Hide Password" data-tooltip="Show/Hide Password"><span class="material-symbols-outlined">visibility</span></button>
               </div>
             </div>
             <div class="actions">
@@ -724,7 +753,7 @@ export class SettingsPanel {
               <label>API Key</label>
               <div class="input-row">
                 <input type="password" id="openai-key" placeholder="sk-...">
-                <button type="button" class="icon-btn" onclick="togglePeek('openai-key', this)"><span class="material-symbols-outlined">visibility</span></button>
+                <button type="button" class="icon-btn" onclick="togglePeek('openai-key', this)" title="Show/Hide API Key" data-tooltip="Show/Hide API Key"><span class="material-symbols-outlined">visibility</span></button>
               </div>
             </div>
             <div class="actions">
@@ -747,7 +776,7 @@ export class SettingsPanel {
               <label>API Key</label>
               <div class="input-row">
                 <input type="password" id="anthropic-key" placeholder="sk-ant-...">
-                <button type="button" class="icon-btn" onclick="togglePeek('anthropic-key', this)"><span class="material-symbols-outlined">visibility</span></button>
+                <button type="button" class="icon-btn" onclick="togglePeek('anthropic-key', this)" title="Show/Hide API Key" data-tooltip="Show/Hide API Key"><span class="material-symbols-outlined">visibility</span></button>
               </div>
             </div>
             <div class="actions">
@@ -770,7 +799,7 @@ export class SettingsPanel {
               <label>API Key</label>
               <div class="input-row">
                 <input type="password" id="gemini-key" placeholder="AIzaSy...">
-                <button type="button" class="icon-btn" onclick="togglePeek('gemini-key', this)"><span class="material-symbols-outlined">visibility</span></button>
+                <button type="button" class="icon-btn" onclick="togglePeek('gemini-key', this)" title="Show/Hide API Key" data-tooltip="Show/Hide API Key"><span class="material-symbols-outlined">visibility</span></button>
               </div>
             </div>
             <div class="actions">
@@ -793,7 +822,7 @@ export class SettingsPanel {
               <label>API Key</label>
               <div class="input-row">
                 <input type="password" id="ollamaCloud-key" placeholder="API key...">
-                <button type="button" class="icon-btn" onclick="togglePeek('ollamaCloud-key', this)"><span class="material-symbols-outlined">visibility</span></button>
+                <button type="button" class="icon-btn" onclick="togglePeek('ollamaCloud-key', this)" title="Show/Hide API Key" data-tooltip="Show/Hide API Key"><span class="material-symbols-outlined">visibility</span></button>
               </div>
             </div>
             <div class="actions">
@@ -816,7 +845,7 @@ export class SettingsPanel {
               <label>API Key</label>
               <div class="input-row">
                 <input type="password" id="huggingface-key" placeholder="hf_...">
-                <button type="button" class="icon-btn" onclick="togglePeek('huggingface-key', this)"><span class="material-symbols-outlined">visibility</span></button>
+                <button type="button" class="icon-btn" onclick="togglePeek('huggingface-key', this)" title="Show/Hide API Key" data-tooltip="Show/Hide API Key"><span class="material-symbols-outlined">visibility</span></button>
               </div>
             </div>
             <div class="actions">
@@ -844,7 +873,7 @@ export class SettingsPanel {
               <label>API Key</label>
               <div class="input-row">
                 <input type="password" id="openrouter-key" placeholder="sk-or-...">
-                <button type="button" class="icon-btn" onclick="togglePeek('openrouter-key', this)"><span class="material-symbols-outlined">visibility</span></button>
+                <button type="button" class="icon-btn" onclick="togglePeek('openrouter-key', this)" title="Show/Hide API Key" data-tooltip="Show/Hide API Key"><span class="material-symbols-outlined">visibility</span></button>
               </div>
             </div>
             <div class="actions">
@@ -867,7 +896,7 @@ export class SettingsPanel {
               <label>API Key</label>
               <div class="input-row">
                 <input type="password" id="opencodeZen-key" placeholder="API key...">
-                <button type="button" class="icon-btn" onclick="togglePeek('opencodeZen-key', this)"><span class="material-symbols-outlined">visibility</span></button>
+                <button type="button" class="icon-btn" onclick="togglePeek('opencodeZen-key', this)" title="Show/Hide API Key" data-tooltip="Show/Hide API Key"><span class="material-symbols-outlined">visibility</span></button>
               </div>
             </div>
             <div class="actions">
@@ -1200,6 +1229,64 @@ export class SettingsPanel {
         toast.remove();
       }, 3500);
     }
+
+    // ── Tooltips ──────────────────────────────────────────────────────
+    let tooltipEl = null;
+    let tooltipTimeout = null;
+    let currentTooltipTarget = null;
+
+    function hideTooltip() {
+      if (tooltipTimeout) { clearTimeout(tooltipTimeout); tooltipTimeout = null; }
+      if (tooltipEl) { tooltipEl.classList.remove('visible'); }
+      currentTooltipTarget = null;
+    }
+
+    function showTooltip(target) {
+      const text = target.getAttribute('data-tooltip') || target.getAttribute('title');
+      if (!text || !text.trim()) return;
+      if (!tooltipEl) {
+        tooltipEl = document.createElement('div');
+        tooltipEl.className = 'terminal-tooltip';
+        document.body.appendChild(tooltipEl);
+      }
+      if (target.hasAttribute('title')) {
+        target.setAttribute('data-tooltip', text);
+        target.removeAttribute('title');
+      }
+      tooltipEl.textContent = text;
+      const rect = target.getBoundingClientRect();
+      const w = tooltipEl.offsetWidth;
+      const h = tooltipEl.offsetHeight;
+      let left = rect.left + (rect.width / 2) - (w / 2);
+      left = Math.max(6, Math.min(left, window.innerWidth - w - 6));
+      let top = (rect.top > window.innerHeight / 2) ? (rect.top - h - 6) : (rect.bottom + 6);
+      top = Math.max(6, Math.min(top, window.innerHeight - h - 6));
+      tooltipEl.style.left = Math.round(left) + 'px';
+      tooltipEl.style.top = Math.round(top) + 'px';
+      tooltipEl.classList.add('visible');
+    }
+
+    document.addEventListener('mouseover', (e) => {
+      const target = e.target.closest('[data-tooltip], [title]');
+      if (!target || target === currentTooltipTarget) return;
+      currentTooltipTarget = target;
+      if (tooltipTimeout) clearTimeout(tooltipTimeout);
+      const wasVisible = tooltipEl && tooltipEl.classList.contains('visible');
+      tooltipTimeout = setTimeout(() => {
+        if (currentTooltipTarget === target) showTooltip(target);
+      }, wasVisible ? 0 : 80);
+    });
+
+    document.addEventListener('mouseout', (e) => {
+      const target = e.target.closest('[data-tooltip], [title]');
+      if (target && target === currentTooltipTarget) {
+        if (e.relatedTarget && target.contains(e.relatedTarget)) return;
+        hideTooltip();
+      }
+    });
+
+    document.addEventListener('mousedown', hideTooltip);
+    window.addEventListener('scroll', hideTooltip, true);
   </script>
 </body>
 </html>`;

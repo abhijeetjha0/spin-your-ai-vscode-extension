@@ -264,8 +264,122 @@ let allModels = [];         // [{providerId, providerName, modelId, modelName, v
 let selectedModelValue = null; // 'providerId::modelId'
 let thinkingInterval = null;
 
+// ── Terminal Tooltip Engine ──────────────────────────────────────────
+let tooltipEl = null;
+let tooltipShowTimeout = null;
+let currentTooltipTarget = null;
+
+function hideTooltip() {
+    if (tooltipShowTimeout) {
+        clearTimeout(tooltipShowTimeout);
+        tooltipShowTimeout = null;
+    }
+    if (tooltipEl) {
+        tooltipEl.classList.remove('visible');
+    }
+    currentTooltipTarget = null;
+}
+
+function showTooltip(target) {
+    const text = target.getAttribute('data-tooltip') || target.getAttribute('title');
+    if (!text || !text.trim()) return;
+
+    if (!tooltipEl) {
+        tooltipEl = document.createElement('div');
+        tooltipEl.id = 'terminal-global-tooltip';
+        tooltipEl.className = 'terminal-tooltip';
+        document.body.appendChild(tooltipEl);
+    }
+
+    // Suppress native title popup to avoid duplicate/delayed glitches
+    if (target.hasAttribute('title')) {
+        target.setAttribute('data-tooltip', text);
+        target.removeAttribute('title');
+    }
+
+    tooltipEl.textContent = text;
+
+    // Measure element bounding box
+    const targetRect = target.getBoundingClientRect();
+    const tooltipWidth = tooltipEl.offsetWidth;
+    const tooltipHeight = tooltipEl.offsetHeight;
+
+    // Center horizontally, clamped to viewport edges
+    const margin = 6;
+    let left = targetRect.left + (targetRect.width / 2) - (tooltipWidth / 2);
+    left = Math.max(margin, Math.min(left, window.innerWidth - tooltipWidth - margin));
+
+    // Position vertically: above if element is in lower half of screen, below otherwise
+    let top;
+    if (targetRect.top > window.innerHeight / 2) {
+        top = targetRect.top - tooltipHeight - 6;
+    } else {
+        top = targetRect.bottom + 6;
+    }
+    top = Math.max(margin, Math.min(top, window.innerHeight - tooltipHeight - margin));
+
+    tooltipEl.style.left = `${Math.round(left)}px`;
+    tooltipEl.style.top = `${Math.round(top)}px`;
+    tooltipEl.classList.add('visible');
+}
+
+function initTooltips() {
+    if (!tooltipEl) {
+        tooltipEl = document.createElement('div');
+        tooltipEl.id = 'terminal-global-tooltip';
+        tooltipEl.className = 'terminal-tooltip';
+        document.body.appendChild(tooltipEl);
+    }
+
+    // Sync any existing title attributes to data-tooltip
+    document.querySelectorAll('[title]').forEach(el => {
+        if (!el.hasAttribute('data-tooltip')) {
+            el.setAttribute('data-tooltip', el.getAttribute('title'));
+        }
+    });
+
+    document.addEventListener('mouseover', (e) => {
+        const target = e.target.closest('[data-tooltip], [title]');
+        if (!target) return;
+        if (target === currentTooltipTarget) return;
+
+        const wasVisible = tooltipEl && tooltipEl.classList.contains('visible');
+        currentTooltipTarget = target;
+        if (tooltipShowTimeout) {
+            clearTimeout(tooltipShowTimeout);
+        }
+
+        // Fast response: 0ms if already browsing tooltips, 80ms initially
+        const delay = wasVisible ? 0 : 80;
+        tooltipShowTimeout = setTimeout(() => {
+            if (currentTooltipTarget === target) {
+                showTooltip(target);
+            }
+        }, delay);
+    });
+
+    document.addEventListener('mouseout', (e) => {
+        const target = e.target.closest('[data-tooltip], [title]');
+        if (target && target === currentTooltipTarget) {
+            if (e.relatedTarget && target.contains(e.relatedTarget)) {
+                return;
+            }
+            hideTooltip();
+        }
+    });
+
+    document.addEventListener('mousedown', hideTooltip);
+    window.addEventListener('scroll', hideTooltip, true);
+}
+
+let isInitialized = false;
+
 // Initialize
 function init() {
+    if (isInitialized) return;
+    isInitialized = true;
+
+    initTooltips();
     vscode.postMessage({ type: 'getModels' });
     vscode.postMessage({ type: 'getHistory' });
     vscode.postMessage({ type: 'getSubagents' });
@@ -485,6 +599,19 @@ window.addEventListener('message', event => {
             }
             break;
         case 'restoreHistory':
+            if (isGenerating && msg.isGenerating !== false) {
+                // If generation is actively running and backend indicates it is still generating,
+                // do not wipe chatContainer or reset the in-flight DOM.
+                if (msg.sessions) {
+                    allSessions = msg.sessions;
+                    currentSessionId = msg.currentSessionId;
+                    renderSessionsList();
+                }
+                break;
+            }
+            if (isGenerating && msg.isGenerating === false) {
+                finishGeneration();
+            }
             if (msg.sessions) {
                 allSessions = msg.sessions;
                 currentSessionId = msg.currentSessionId;
@@ -493,6 +620,59 @@ window.addEventListener('message', event => {
             renderHistory(msg.history);
             if (msg.compactedCount) {
                 renderCompactedBadge(msg.compactedCount, msg.savedTokens, true);
+            }
+            break;
+        case 'syncActiveStream':
+            if (msg.isGenerating && !isGenerating) {
+                // Rehydrate if webview was freshly initialized/reloaded while streaming
+                if (msg.history) {
+                    renderHistory(msg.history);
+                }
+                isGenerating = true;
+                chatInput.disabled = true;
+                attachBtn.disabled = true;
+                chatInput.placeholder = "Processing...";
+                sendBtn.classList.add('hidden');
+                stopBtn.classList.remove('hidden');
+                currentMessageId = Date.now().toString();
+                const aiMsgEl = appendMessage('AI', '', 'ai-msg', currentMessageId);
+                currentAiText = msg.text || '';
+                if (currentAiText) {
+                    aiMsgEl.innerHTML = renderMarkdown(currentAiText, {
+                        subagents: msg.subagents || [],
+                        activeCount: msg.activeCount || 0
+                    });
+                } else {
+                    aiMsgEl.innerHTML = '<span class="typing-indicator" style="color:#a78bfa;font-style:italic">Synthesizing data...</span>';
+                }
+                if (typeof msg.activeCount === 'number') {
+                    updateSubagentsUI(msg.activeCount, msg.subagents || []);
+                }
+            } else if (isGenerating) {
+                if (currentMessageId) {
+                    const msgEl = document.getElementById(`msg-${currentMessageId}`);
+                    if (msgEl) {
+                        if (msg.text && msg.text !== currentAiText) {
+                            if (thinkingInterval) {
+                                clearInterval(thinkingInterval);
+                                thinkingInterval = null;
+                            }
+                            currentAiText = msg.text;
+                            msgEl.innerHTML = renderMarkdown(currentAiText, {
+                                subagents: currentSubagents,
+                                activeCount: activeSubagentsCount
+                            });
+                            const threshold = 150;
+                            const isNearBottom = chatContainer.scrollHeight - chatContainer.clientHeight - chatContainer.scrollTop < threshold;
+                            if (isNearBottom) {
+                                chatContainer.scrollTop = chatContainer.scrollHeight;
+                            }
+                        }
+                    }
+                }
+                if (typeof msg.activeCount === 'number') {
+                    updateSubagentsUI(msg.activeCount, msg.subagents || []);
+                }
             }
             break;
         case 'contextCompacted':
@@ -1024,7 +1204,7 @@ function renderAttachmentPreviews() {
         return `<div class="attachment-chip">
             ${thumb}
             <span class="file-name">${att.name}</span>
-            <button class="remove-attachment" data-index="${i}"><span class="material-symbols-outlined">close</span></button>
+            <button class="remove-attachment" data-index="${i}" title="Remove attachment" data-tooltip="Remove attachment"><span class="material-symbols-outlined">close</span></button>
         </div>`;
     }).join('');
 
@@ -1087,7 +1267,7 @@ function generateSubagentsHtml(subagents, activeCount = 0) {
         }
 
         const termBtnHtml = isWorkingSa 
-            ? `<button type="button" class="subagent-terminate-btn" data-subagent-id="${escapeSubagentHtml(sa.id)}">Terminate</button>` 
+            ? `<button type="button" class="subagent-terminate-btn" data-subagent-id="${escapeSubagentHtml(sa.id)}" title="Terminate Sub-Agent" data-tooltip="Terminate Sub-Agent">Terminate</button>` 
             : '';
 
         return `
@@ -1100,7 +1280,7 @@ function generateSubagentsHtml(subagents, activeCount = 0) {
                 <div class="subagent-meta">
                     <span>ID: <code>${escapeSubagentHtml(idShort)}</code> | Turns: ${turns}</span>
                     <div style="display: flex; gap: 6px;">
-                        <button type="button" class="subagent-context-toggle">View Context</button>
+                        <button type="button" class="subagent-context-toggle" title="Toggle Context View" data-tooltip="Toggle Context View">View Context</button>
                         ${termBtnHtml}
                     </div>
                 </div>
@@ -1118,7 +1298,7 @@ function generateSubagentsHtml(subagents, activeCount = 0) {
                     <span class="subagents-count-badge ${isWorking ? 'working' : ''}">${countLabel}</span>
                     ${pulseHtml}
                 </div>
-                <button type="button" class="subagent-reset-btn" title="Reset Inactive Sub-Agents">
+                <button type="button" class="subagent-reset-btn" title="Reset Inactive Sub-Agents" data-tooltip="Reset Inactive Sub-Agents">
                     <span class="material-symbols-outlined" style="font-size:14px;vertical-align:middle;">delete_sweep</span> Reset
                 </button>
             </div>
@@ -1324,8 +1504,9 @@ function renderSessionsList() {
         const deleteBtn = document.createElement('span');
         deleteBtn.className = 'material-symbols-outlined';
         deleteBtn.textContent = 'delete';
-        deleteBtn.style = 'font-size: 16px; cursor: pointer; color: var(--text-muted); padding: 2px; border-radius: 4px;';
-        deleteBtn.title = 'Delete Session';
+        deleteBtn.style = 'font-size: 16px; cursor: pointer; color: var(--text-muted); padding: 2px;';
+        deleteBtn.title = 'Reset Session';
+        deleteBtn.dataset.tooltip = 'Reset Session';
         
         deleteBtn.addEventListener('click', (e) => {
             e.stopPropagation();
@@ -1442,12 +1623,16 @@ function renderSubagentsList() {
         const toggleContextBtn = document.createElement('button');
         toggleContextBtn.className = 'subagent-context-toggle';
         toggleContextBtn.textContent = 'View Context';
+        toggleContextBtn.title = 'Toggle Context View';
+        toggleContextBtn.dataset.tooltip = 'Toggle Context View';
         actions.appendChild(toggleContextBtn);
 
         if (sa.status === 'working') {
             const termBtn = document.createElement('button');
             termBtn.className = 'subagent-terminate-btn';
             termBtn.textContent = 'Terminate';
+            termBtn.title = 'Terminate Sub-Agent';
+            termBtn.dataset.tooltip = 'Terminate Sub-Agent';
             termBtn.addEventListener('click', () => {
                 vscode.postMessage({
                     type: 'terminateSubagent',
