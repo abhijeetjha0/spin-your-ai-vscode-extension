@@ -1,10 +1,5 @@
 # Spin Your AI for VSCode
 
-[![Coverage](https://img.shields.io/badge/coverage-90%25%2B-brightgreen.svg)](#)
-[![Tests](https://img.shields.io/badge/tests-75%2F75%20passing-brightgreen.svg)](#)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.9-blue.svg)](#)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](#)
-
 Spin up AI models from your editor, powered by local AI, cloud frontiers, and Model Context Protocol (MCP) agents.
 
 ## Features

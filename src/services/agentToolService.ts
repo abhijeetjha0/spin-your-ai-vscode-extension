@@ -12,16 +12,33 @@ export interface ToolPermissionRequest {
 }
 
 export type PermissionRequestHandler = (req: ToolPermissionRequest) => Promise<boolean>;
+export type AgentPermissionMode = 'prompt' | 'allow_all' | 'read_only';
 
 export class AgentToolService {
     private static permissionHandler?: PermissionRequestHandler;
     private static pendingConfirmations = new Map<string, (approved: boolean) => void>();
+    private static permissionMode: AgentPermissionMode = 'prompt';
 
     /**
      * Register the UI permission prompt handler (typically registered by ChatSidebarViewProvider).
      */
     public static setPermissionHandler(handler: PermissionRequestHandler) {
         this.permissionHandler = handler;
+    }
+
+    /**
+     * Set the workspace agent permission mode.
+     * - 'prompt': show diff approval card for every write/edit (default).
+     * - 'allow_all': auto-approve all writes and edits without prompting.
+     * - 'read_only': block all writes and edits silently.
+     */
+    public static setPermissionMode(mode: AgentPermissionMode) {
+        this.permissionMode = mode;
+    }
+
+    /** Returns the current agent permission mode. */
+    public static getPermissionMode(): AgentPermissionMode {
+        return this.permissionMode;
     }
 
     /**
@@ -377,8 +394,18 @@ export class AgentToolService {
 
     /**
      * Prompts the user via Webview for approval before destructive/modifying operations.
+     * Short-circuits based on permissionMode: allow_all auto-approves, read_only auto-rejects.
      */
     private static async askUserPermission(toolName: string, diffInfo: FileDiffInfo): Promise<boolean> {
+        if (this.permissionMode === 'allow_all') {
+            return true;
+        }
+        if (this.permissionMode === 'read_only') {
+            Logger.log(`AgentPermissionMode=read_only: blocked ${toolName} on ${diffInfo.filePath}`);
+            return false;
+        }
+
+        // mode === 'prompt': show diff card
         if (!this.permissionHandler) {
             Logger.warn('No permission handler registered; defaulting to rejection for safety.');
             return false;

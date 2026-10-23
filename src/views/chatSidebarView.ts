@@ -211,6 +211,20 @@ export class ChatSidebarViewProvider implements vscode.WebviewViewProvider {
                     }
                     break;
                 }
+                case 'setAgentPermissionMode': {
+                    const mode = data.mode as string;
+                    if (data.remember && this._context) {
+                        await this._context.workspaceState.update('spinYourAi.agentPermissionMode', mode);
+                    }
+                    AgentToolService.setPermissionMode(mode as any);
+                    break;
+                }
+                case 'getAgentPermissionMode': {
+                    const savedMode = this._context?.workspaceState.get<string>('spinYourAi.agentPermissionMode') || 'prompt';
+                    AgentToolService.setPermissionMode(savedMode as any);
+                    this.sendMessageToWebview({ type: 'agentPermissionMode', mode: savedMode });
+                    break;
+                }
             }
         });
     }
@@ -647,12 +661,27 @@ export class ChatSidebarViewProvider implements vscode.WebviewViewProvider {
                             </div>
                         </div>
                         <div class="header-actions">
-                            <button id="compact-btn" class="icon-btn" title="Compact Context (Save Tokens)" data-tooltip="Compact Context (Save Tokens)"><span class="material-symbols-outlined">compress</span></button>
-                            <button id="reload-models-btn" class="icon-btn" title="Reload Models" data-tooltip="Reload Models"><span class="material-symbols-outlined">refresh</span></button>
-                            <button id="export-chat-btn" class="icon-btn" title="Export Chat" data-tooltip="Export Chat"><span class="material-symbols-outlined">download</span></button>
+                            <button id="agent-permission-btn" class="icon-btn" title="Agent Permission Mode" data-tooltip="Agent Permission Mode"><span class="material-symbols-outlined">security</span></button>
                             <button id="new-chat-btn" class="icon-btn" title="New Chat" data-tooltip="New Chat"><span class="material-symbols-outlined">add</span></button>
-                            <button id="help-btn" class="icon-btn" title="Help" data-tooltip="Help"><span class="material-symbols-outlined">help</span></button>
                             <button id="options-btn" class="icon-btn" title="Settings" data-tooltip="Settings"><span class="material-symbols-outlined">settings</span></button>
+                            <div class="kebab-wrapper">
+                                <button id="more-btn" class="icon-btn" title="More Options" data-tooltip="More Options"><span class="material-symbols-outlined">more_vert</span></button>
+                                <div id="kebab-menu" class="kebab-menu hidden">
+                                    <div class="kebab-menu-title">MORE OPTIONS</div>
+                                    <button id="compact-btn" class="kebab-item" title="Compact Context (Save Tokens)">
+                                        <span class="material-symbols-outlined">compress</span><span>Compact Context</span>
+                                    </button>
+                                    <button id="reload-models-btn" class="kebab-item" title="Reload Models">
+                                        <span class="material-symbols-outlined">refresh</span><span>Reload Models</span>
+                                    </button>
+                                    <button id="export-chat-btn" class="kebab-item" title="Export Chat">
+                                        <span class="material-symbols-outlined">download</span><span>Export Chat</span>
+                                    </button>
+                                    <button id="help-btn" class="kebab-item" title="Help">
+                                        <span class="material-symbols-outlined">help</span><span>Help</span>
+                                    </button>
+                                </div>
+                            </div>
                         </div>
                     </header>
 
@@ -722,6 +751,65 @@ export class ChatSidebarViewProvider implements vscode.WebviewViewProvider {
                         </div>
                         <div class="modal-body subagents-list-body" id="subagents-list-container">
                             <!-- Sub-agent cards rendered dynamically -->
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Agent Permission Mode Modal -->
+                <div id="agent-mode-modal" class="modal hidden">
+                    <div class="modal-content agent-mode-content">
+                        <div class="modal-header">
+                            <div class="modal-title-wrapper" style="display: flex; align-items: center; gap: 8px;">
+                                <span class="material-symbols-outlined" style="color: #a78bfa; font-size: 18px;">security</span>
+                                <h2 style="font-size: 13px; color: var(--text-main); font-weight: bold; letter-spacing: 0.08em; margin: 0;">WORKSPACE AGENT PERMISSIONS</h2>
+                            </div>
+                            <button id="close-agent-mode-btn" class="icon-btn" title="Close" data-tooltip="Close"><span class="material-symbols-outlined">close</span></button>
+                        </div>
+                        <div class="agent-mode-body">
+                            <p class="agent-mode-intro">Select permission mode for workspace file modification tools:</p>
+                            <div class="mode-cards" id="mode-cards-container">
+                                <label class="mode-card" data-mode="prompt">
+                                    <input type="radio" name="workspace-agent-mode" value="prompt" checked>
+                                    <div class="mode-card-inner">
+                                        <div class="mode-card-header">
+                                            <span class="mode-card-title">PROMPT</span>
+                                            <span class="mode-badge badge-prompt">ASK EACH TIME</span>
+                                        </div>
+                                        <p class="mode-card-desc">Read-only tools run automatically. File writes and edits show a diff card and require your approval before applying.</p>
+                                    </div>
+                                </label>
+                                <label class="mode-card" data-mode="allow_all">
+                                    <input type="radio" name="workspace-agent-mode" value="allow_all">
+                                    <div class="mode-card-inner">
+                                        <div class="mode-card-header">
+                                            <span class="mode-card-title">ALLOW ALL</span>
+                                            <span class="mode-badge badge-auto">FULL AUTONOMOUS</span>
+                                        </div>
+                                        <p class="mode-card-desc">All workspace tools including file writes and edits execute automatically without confirmation prompts.</p>
+                                    </div>
+                                </label>
+                                <label class="mode-card" data-mode="read_only">
+                                    <input type="radio" name="workspace-agent-mode" value="read_only">
+                                    <div class="mode-card-inner">
+                                        <div class="mode-card-header">
+                                            <span class="mode-card-title">READ ONLY</span>
+                                            <span class="mode-badge badge-block">STRICT READ-ONLY</span>
+                                        </div>
+                                        <p class="mode-card-desc">Only read-only workspace tools are available. File writes and edits are blocked entirely.</p>
+                                    </div>
+                                </label>
+                            </div>
+                            <div class="mode-remember-row">
+                                <label class="checkbox-label" style="display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--text-muted); cursor: pointer;">
+                                    <input type="checkbox" id="remember-agent-mode" checked style="accent-color: #a78bfa;">
+                                    <span>Remember selection for this workspace</span>
+                                </label>
+                            </div>
+                        </div>
+                        <div class="modal-footer" style="padding-top: 10px; border-top: 1px solid var(--border-color); display: flex; justify-content: flex-end; gap: 8px;">
+                            <button id="save-agent-mode-btn" class="agent-btn agent-btn-allow">
+                                <span class="material-symbols-outlined">check</span> SAVE
+                            </button>
                         </div>
                     </div>
                 </div>

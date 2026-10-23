@@ -14,6 +14,12 @@ const contextToggle = document.getElementById('include-page-context');
 const attachBtn = document.getElementById('attach-btn');
 const fileInput = document.getElementById('file-input');
 const attachmentPreview = document.getElementById('attachment-preview');
+const agentPermissionBtn = document.getElementById('agent-permission-btn');
+const agentModeModal = document.getElementById('agent-mode-modal');
+const closeAgentModeBtn = document.getElementById('close-agent-mode-btn');
+const saveAgentModeBtn = document.getElementById('save-agent-mode-btn');
+const rememberAgentMode = document.getElementById('remember-agent-mode');
+let currentAgentMode = 'prompt';
 
 // Slash commands elements & state
 const slashPopover = document.getElementById('slash-commands-popover');
@@ -583,6 +589,62 @@ function init() {
             sessionsModal.classList.add('hidden');
         }
     });
+
+    // Kebab overflow menu toggle
+    const moreBtn = document.getElementById('more-btn');
+    const kebabMenu = document.getElementById('kebab-menu');
+    moreBtn?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        kebabMenu?.classList.toggle('hidden');
+    });
+    kebabMenu?.addEventListener('click', () => kebabMenu.classList.add('hidden'));
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+            kebabMenu?.classList.add('hidden');
+            agentModeModal?.classList.add('hidden');
+        }
+    });
+    document.addEventListener('click', (e) => {
+        if (kebabMenu && !kebabMenu.classList.contains('hidden') && !moreBtn?.contains(e.target)) {
+            kebabMenu.classList.add('hidden');
+        }
+    });
+
+    // Agent permission mode modal
+    function showAgentModeModal() {
+        // Sync radio to current mode
+        const radio = agentModeModal?.querySelector(`input[value="${currentAgentMode}"]`);
+        if (radio) radio.checked = true;
+        agentModeModal?.classList.remove('hidden');
+    }
+    function hideAgentModeModal() {
+        agentModeModal?.classList.add('hidden');
+    }
+    function saveAgentPermissionMode() {
+        const selected = agentModeModal?.querySelector('input[name="workspace-agent-mode"]:checked');
+        if (!selected) return;
+        currentAgentMode = selected.value;
+        const remember = rememberAgentMode?.checked !== false;
+        vscode.postMessage({ type: 'setAgentPermissionMode', mode: currentAgentMode, remember });
+        updatePermissionBtnLabel();
+        hideAgentModeModal();
+    }
+    function updatePermissionBtnLabel() {
+        if (agentPermissionBtn) {
+            agentPermissionBtn.title = `Workspace Agent Permissions: ${currentAgentMode}`;
+            agentPermissionBtn.setAttribute('data-tooltip', agentPermissionBtn.title);
+        }
+    }
+
+    agentPermissionBtn?.addEventListener('click', showAgentModeModal);
+    closeAgentModeBtn?.addEventListener('click', hideAgentModeModal);
+    saveAgentModeBtn?.addEventListener('click', saveAgentPermissionMode);
+    agentModeModal?.addEventListener('click', (e) => {
+        if (e.target === agentModeModal) hideAgentModeModal();
+    });
+
+    // Load persisted mode
+    vscode.postMessage({ type: 'getAgentPermissionMode' });
 }
 
 let pendingAutoSend = false;
@@ -724,6 +786,14 @@ window.addEventListener('message', event => {
                 }
             }
             break;
+        case 'agentPermissionMode': {
+            currentAgentMode = msg.mode || 'prompt';
+            if (agentPermissionBtn) {
+                agentPermissionBtn.title = `Workspace Agent Permissions: ${currentAgentMode}`;
+                agentPermissionBtn.setAttribute('data-tooltip', agentPermissionBtn.title);
+            }
+            break;
+        }
     }
 });
 

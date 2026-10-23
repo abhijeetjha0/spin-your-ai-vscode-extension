@@ -237,4 +237,28 @@ describe('AgentToolService', () => {
             /Unknown workspace agent tool: workspace_unknown_action/
         );
     });
+
+    it('respects permissionMode (allow_all and read_only)', async () => {
+        // Test allow_all mode: auto-approves write without handler
+        AgentToolService.setPermissionMode('allow_all');
+        AgentToolService.setPermissionHandler(null as any);
+        const autoApproved = await AgentToolService.executeTool('workspace_write_file', {
+            file_path: 'allow_all.txt',
+            content: 'autonomous content'
+        });
+        assert.strictEqual(autoApproved.success, true);
+        assert.strictEqual(global.__vscodeMockState.files.get('/test/workspace/allow_all.txt'), 'autonomous content');
+
+        // Test read_only mode: blocks write immediately
+        AgentToolService.setPermissionMode('read_only');
+        const blocked = await AgentToolService.executeTool('workspace_write_file', {
+            file_path: 'readonly.txt',
+            content: 'should be blocked'
+        });
+        assert.strictEqual(blocked.success, false);
+        assert.ok(blocked.message?.includes('rejected'));
+
+        // Reset to prompt
+        AgentToolService.setPermissionMode('prompt');
+    });
 });
