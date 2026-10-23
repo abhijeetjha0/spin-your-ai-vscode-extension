@@ -19,7 +19,19 @@ export interface ProviderConfig {
     supportsTools?: boolean;
 }
 
+export interface TokenUsageMetrics {
+    inputTokens: number;
+    outputTokens: number;
+    totalTokens: number;
+    cachedTokens?: number;
+    cacheCreationTokens?: number;
+    cacheReadTokens?: number;
+    savingsPercent?: number;
+    durationMs?: number;
+}
+
 export interface StreamChunk {
     text: string;
     done: boolean;
+    usage?: TokenUsageMetrics;
 }

@@ -255,6 +255,7 @@ const modelDisplayName = document.getElementById('model-display-name');
 let isGenerating = false;
 let currentMessageId = null;
 let currentAiText = '';
+let currentAiUsage = null;
 let pendingAttachments = [];
 
 const sessionsBtn = document.getElementById('sessions-btn');
@@ -763,7 +764,7 @@ window.addEventListener('message', event => {
             renderSessionsList();
             break;
         case 'streamChunk':
-            handleStreamChunk(msg.text, msg.done, msg.error);
+            handleStreamChunk(msg.text, msg.done, msg.error, msg.usage);
             break;
         case 'error':
             handleStreamChunk('', true, msg.message);
@@ -825,6 +826,8 @@ function renderHistory(history) {
         } else if (item.role === 'assistant') {
             const aiEl = appendMessage('AI', item.text, 'ai-msg');
             aiEl.innerHTML = renderMarkdown(item.text);
+            const footer = createMessageFooter(item.text, item.usage);
+            aiEl.appendChild(footer);
         } else {
             appendMessage('System', item.text, 'system-msg');
         }
@@ -1048,6 +1051,68 @@ async function sendMessage() {
     });
 }
 
+function formatCompactNumber(n) {
+    if (!n || isNaN(n)) return '0';
+    if (n < 1000) return n.toString();
+    const k = n / 1000;
+    return (k >= 10 ? Math.round(k) : k.toFixed(1).replace(/\.0$/, '')) + 'k';
+}
+
+function createMessageFooter(rawText, usage) {
+    const footer = document.createElement('div');
+    footer.className = 'message-meta-footer';
+
+    if (usage && (usage.totalTokens > 0 || usage.cachedTokens > 0)) {
+        const badge = document.createElement('span');
+        badge.className = 'cache-badge';
+
+        let label = '';
+        if (usage.cachedTokens && usage.cachedTokens > 0) {
+            const cachedStr = formatCompactNumber(usage.cachedTokens);
+            const savingsStr = usage.savingsPercent ? ` (${usage.savingsPercent}% saved)` : '';
+            label = `${cachedStr} cached${savingsStr}`;
+        } else {
+            label = `${formatCompactNumber(usage.totalTokens)} tokens`;
+        }
+
+        const tooltipParts = [
+            `Input: ${(usage.inputTokens || 0).toLocaleString()}`,
+            `Cached: ${(usage.cachedTokens || 0).toLocaleString()}`,
+            `Output: ${(usage.outputTokens || 0).toLocaleString()}`
+        ];
+        if (usage.durationMs) {
+            tooltipParts.push(`Latency: ${usage.durationMs}ms`);
+        }
+        badge.title = tooltipParts.join(' | ');
+
+        badge.innerHTML = `
+            <span class="material-symbols-outlined">bolt</span>
+            <span class="cache-text">${label}</span>
+        `;
+        footer.appendChild(badge);
+    }
+
+    const copyBtn = document.createElement('button');
+    copyBtn.className = 'copy-btn icon-btn';
+    copyBtn.title = 'Copy Message';
+    copyBtn.innerHTML = '<span class="material-symbols-outlined">content_copy</span>';
+    copyBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(rawText).catch(() => {});
+        }
+        vscode.postMessage({ type: 'copyToClipboard', text: rawText });
+        copyBtn.innerHTML = '<span class="material-symbols-outlined">check</span>';
+        showToast('Copied to clipboard');
+        setTimeout(() => {
+            copyBtn.innerHTML = '<span class="material-symbols-outlined">content_copy</span>';
+        }, 1500);
+    });
+    footer.appendChild(copyBtn);
+
+    return footer;
+}
+
 function appendMessage(sender, text, className, id = null) {
     const div = document.createElement('div');
     div.className = `message ${className}`;
@@ -1168,7 +1233,7 @@ function showToast(message) {
     setTimeout(() => toast.classList.remove('visible'), 3000);
 }
 
-function handleStreamChunk(chunk, done, error) {
+function handleStreamChunk(chunk, done, error, usage) {
     if (!isGenerating) return;
 
     const msgEl = document.getElementById(`msg-${currentMessageId}`);
@@ -1179,6 +1244,10 @@ function handleStreamChunk(chunk, done, error) {
         msgEl.style.color = '#ef4444';
         finishGeneration();
         return;
+    }
+
+    if (usage) {
+        currentAiUsage = usage;
     }
 
     if (chunk) {
@@ -1204,6 +1273,10 @@ function handleStreamChunk(chunk, done, error) {
     }
 
     if (done) {
+        if (msgEl && !msgEl.querySelector('.message-meta-footer')) {
+            const footer = createMessageFooter(currentAiText, currentAiUsage);
+            msgEl.appendChild(footer);
+        }
         finishGeneration();
     }
 }
@@ -1214,9 +1287,10 @@ function finishGeneration() {
         thinkingInterval = null;
     }
     isGenerating = false;
+    currentAiUsage = null;
     chatInput.disabled = false;
     attachBtn.disabled = false;
-    chatInput.placeholder = "Ask anything... (/ for commands & skills)";
+    chatInput.placeholder = "/ for commands & skills...";
     currentMessageId = null;
     currentAiText = '';
     stopBtn.classList.add('hidden');

@@ -3,6 +3,7 @@ import { Message, ModelInfo, StreamChunk } from '../types';
 import { HttpService } from '../utils/http';
 import { McpService } from '../services/mcpService';
 import { SubagentService } from '../services/subagentService';
+import { CacheMetricsService } from '../services/cacheMetricsService';
 import { ToolCacheService } from '../services/toolCacheService';
 
 export class AnthropicProvider extends BaseProvider {
@@ -48,25 +49,44 @@ export class AnthropicProvider extends BaseProvider {
         }));
         let toolCallCount = 0;
         let totalGeneratedContent = 0;
+        let rawUsage: any = {};
+        const startTime = Date.now();
 
         while (true) {
             const canSpin = !isSubagent && SubagentService.getTurnSubagentCount() < SubagentService.MAX_SUBAGENTS_PER_TURN;
-            const turnTools = canSpin ? allTools : allTools.filter(t => t.function.name !== 'spin_subagent');
+            const turnTools = (canSpin ? allTools : allTools.filter(t => t.function.name !== 'spin_subagent'))
+                .sort((a, b) => a.function.name.localeCompare(b.function.name));
 
             const body: any = {
                 model: modelId,
-                system: systemMessages || undefined,
                 messages: currentMessages,
                 max_tokens: 4096,
                 stream: true
             };
 
+            if (systemMessages) {
+                body.system = [
+                    {
+                        type: 'text',
+                        text: systemMessages,
+                        cache_control: { type: 'ephemeral' }
+                    }
+                ];
+            }
+
             if (turnTools.length > 0) {
-                body.tools = turnTools.map(t => ({
-                    name: t.function.name,
-                    description: t.function.description || 'MCP Tool',
-                    input_schema: t.function.parameters || { type: 'object', properties: {} }
-                }));
+                body.tools = turnTools.map((t, idx) => {
+                    const toolObj: any = {
+                        name: t.function.name,
+                        description: t.function.description || 'Tool',
+                        input_schema: t.function.parameters || { type: 'object', properties: {} }
+                    };
+                    // Tag the last tool definition to cache all tools
+                    if (idx === turnTools.length - 1) {
+                        toolObj.cache_control = { type: 'ephemeral' };
+                    }
+                    return toolObj;
+                });
             }
 
             const stream = HttpService.streamServerSentEvents(`${baseUrl}/messages`, {
@@ -96,6 +116,12 @@ export class AnthropicProvider extends BaseProvider {
                     const err = parsed.error || parsed;
                     const errMsg = err.message || (typeof err === 'string' ? err : JSON.stringify(err));
                     throw new Error(errMsg);
+                }
+
+                if (parsed.type === 'message_start' && parsed.message?.usage) {
+                    rawUsage = { ...rawUsage, ...parsed.message.usage };
+                } else if (parsed.type === 'message_delta' && parsed.usage) {
+                    rawUsage = { ...rawUsage, ...parsed.usage };
                 }
 
                 if (parsed.type === 'content_block_start') {
@@ -179,6 +205,8 @@ export class AnthropicProvider extends BaseProvider {
             yield { text: `\n\n> <span class="material-symbols-outlined" style="font-size:16px;vertical-align:-3px;color:#94a3b8">info</span> *Completed ${toolCallCount} tool execution(s). Model finished without additional commentary.*`, done: false };
         }
         
-        yield { text: '', done: true };
+        const durationMs = Date.now() - startTime;
+        const normalizedUsage = CacheMetricsService.normalizeUsage(rawUsage, 'anthropic', durationMs);
+        yield { text: '', done: true, usage: normalizedUsage };
     }
 }

@@ -3,6 +3,7 @@ import { Message, ModelInfo, StreamChunk } from '../types';
 import { HttpService } from '../utils/http';
 import { McpService } from '../services/mcpService';
 import { SubagentService } from '../services/subagentService';
+import { CacheMetricsService } from '../services/cacheMetricsService';
 import { ToolCacheService } from '../services/toolCacheService';
 
 export class GeminiProvider extends BaseProvider {
@@ -66,10 +67,13 @@ export class GeminiProvider extends BaseProvider {
         const currentContents: any[] = [...contents];
         let toolCallCount = 0;
         let totalGeneratedContent = 0;
+        let lastUsageMetadata: any = undefined;
+        const startTime = Date.now();
 
         while (true) {
             const canSpin = !isSubagent && SubagentService.getTurnSubagentCount() < SubagentService.MAX_SUBAGENTS_PER_TURN;
-            const turnTools = canSpin ? allTools : allTools.filter(t => t.function.name !== 'spin_subagent');
+            const turnTools = (canSpin ? allTools : allTools.filter(t => t.function.name !== 'spin_subagent'))
+                .sort((a, b) => a.function.name.localeCompare(b.function.name));
 
             const body: any = { contents: currentContents };
             if (systemInstruction) {
@@ -154,6 +158,10 @@ export class GeminiProvider extends BaseProvider {
                     throw new Error(errMsg);
                 }
 
+                if (parsed.usageMetadata) {
+                    lastUsageMetadata = parsed.usageMetadata;
+                }
+
                 const parts = parsed.candidates?.[0]?.content?.parts || [];
                 for (const part of parts) {
                     // Preserve exact parts (including thought_signature) for multi-turn echo
@@ -230,6 +238,8 @@ export class GeminiProvider extends BaseProvider {
             yield { text: `\n\n> <span class="material-symbols-outlined" style="font-size:16px;vertical-align:-3px;color:#94a3b8">info</span> *Completed ${toolCallCount} tool execution(s). Model finished without additional commentary.*`, done: false };
         }
 
-        yield { text: '', done: true };
+        const durationMs = Date.now() - startTime;
+        const normalizedUsage = CacheMetricsService.normalizeUsage(lastUsageMetadata, 'gemini', durationMs);
+        yield { text: '', done: true, usage: normalizedUsage };
     }
 }

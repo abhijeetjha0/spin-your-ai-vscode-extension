@@ -5,6 +5,7 @@ export interface ChatHistoryItem {
     role: 'user' | 'assistant' | 'system';
     text: string;
     attachments?: Array<{ name: string; type: string; data: string }>;
+    usage?: any;
 }
 
 export interface CompactionResult {

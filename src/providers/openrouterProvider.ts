@@ -3,6 +3,7 @@ import { Message, ModelInfo, StreamChunk } from '../types';
 import { HttpService } from '../utils/http';
 import { McpService } from '../services/mcpService';
 import { SubagentService } from '../services/subagentService';
+import { CacheMetricsService } from '../services/cacheMetricsService';
 import { ToolCacheService } from '../services/toolCacheService';
 
 export class OpenRouterProvider extends BaseProvider {
@@ -64,19 +65,44 @@ export class OpenRouterProvider extends BaseProvider {
         const currentMessages: any[] = [...messages];
         let toolCallCount = 0;
         let totalGeneratedContent = 0;
+        let lastRawUsage: any = undefined;
+        const startTime = Date.now();
 
         while (true) {
             const canSpin = !isSubagent && SubagentService.getTurnSubagentCount() < SubagentService.MAX_SUBAGENTS_PER_TURN;
-            const turnTools = canSpin ? allTools : allTools.filter(t => t.function.name !== 'spin_subagent');
+            const turnTools = (canSpin ? allTools : allTools.filter(t => t.function.name !== 'spin_subagent'))
+                .sort((a, b) => a.function.name.localeCompare(b.function.name));
+
+            // Format messages with cache_control on system or second-to-last turn for models supporting prompt caching
+            const formattedMessages = currentMessages.map((msg, idx) => {
+                // If this is the system message or second-to-last turn in a conversation with history, add cache breakpoint
+                if (idx === 0 && msg.role === 'system' && typeof msg.content === 'string') {
+                    return {
+                        role: msg.role,
+                        content: [
+                            { type: 'text', text: msg.content, cache_control: { type: 'ephemeral' } }
+                        ]
+                    };
+                }
+                return msg;
+            });
 
             const payload: any = {
                 model: modelId,
-                messages: currentMessages,
-                stream: true
+                messages: formattedMessages,
+                stream: true,
+                stream_options: { include_usage: true }
             };
 
             if (turnTools.length > 0) {
-                payload.tools = turnTools;
+                payload.tools = turnTools.map((t, idx) => {
+                    const toolCopy = { ...t };
+                    // Tag the last tool definition with ephemeral cache control
+                    if (idx === turnTools.length - 1) {
+                        (toolCopy as any).cache_control = { type: 'ephemeral' };
+                    }
+                    return toolCopy;
+                });
             }
 
             const stream = HttpService.streamServerSentEvents(`${baseUrl}/chat/completions`, {
@@ -105,6 +131,10 @@ export class OpenRouterProvider extends BaseProvider {
                 if (parsed.error) {
                     const errMsg = parsed.error.message || (typeof parsed.error === 'string' ? parsed.error : JSON.stringify(parsed.error));
                     throw new Error(errMsg);
+                }
+
+                if (parsed.usage) {
+                    lastRawUsage = parsed.usage;
                 }
 
                 const delta = parsed.choices?.[0]?.delta;
@@ -186,6 +216,8 @@ export class OpenRouterProvider extends BaseProvider {
             yield { text: `\n\n> <span class="material-symbols-outlined" style="font-size:16px;vertical-align:-3px;color:#94a3b8">info</span> *Completed ${toolCallCount} tool execution(s). Model finished without additional commentary.*`, done: false };
         }
 
-        yield { text: '', done: true };
+        const durationMs = Date.now() - startTime;
+        const normalizedUsage = CacheMetricsService.normalizeUsage(lastRawUsage, 'openrouter', durationMs);
+        yield { text: '', done: true, usage: normalizedUsage };
     }
 }

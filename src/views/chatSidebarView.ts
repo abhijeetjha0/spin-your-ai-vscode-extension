@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { ProviderRegistry } from '../providers/providerRegistry';
 import { Logger } from '../utils/logger';
 import { HelpPanel } from './helpPanel';
-import { Message } from '../types';
+import { Message, TokenUsageMetrics } from '../types';
 import { ConfigService } from '../services/configService';
 import { McpService } from '../services/mcpService';
 import { WorkspaceService } from '../services/workspaceService';
@@ -15,6 +15,7 @@ interface ChatHistoryItem {
     role: 'user' | 'assistant' | 'system';
     text: string;
     attachments?: Array<{ name: string; type: string; data: string }>;
+    usage?: TokenUsageMetrics;
 }
 
 interface ChatSession {
@@ -163,6 +164,11 @@ export class ChatSidebarViewProvider implements vscode.WebviewViewProvider {
                     break;
                 case 'switchSession':
                     this.switchSession(data.sessionId);
+                    break;
+                case 'copyToClipboard':
+                    if (data.text) {
+                        vscode.env.clipboard.writeText(data.text);
+                    }
                     break;
                 case 'deleteSession':
                     await this.deleteSession(data.sessionId);
@@ -490,6 +496,7 @@ export class ChatSidebarViewProvider implements vscode.WebviewViewProvider {
 
         this._currentAbortController = new AbortController();
         let fullResponseText = '';
+        let lastUsage: TokenUsageMetrics | undefined = undefined;
         this._currentStreamingText = '';
 
         try {
@@ -546,6 +553,7 @@ export class ChatSidebarViewProvider implements vscode.WebviewViewProvider {
             // Append the current message with fully processed text (includes context and attachments)
             messagesPayload.push({ role: 'user', content: processedText });
 
+            const startTime = Date.now();
             const stream = provider.streamChat(
                 messagesPayload,
                 modelId,
@@ -555,10 +563,17 @@ export class ChatSidebarViewProvider implements vscode.WebviewViewProvider {
             for await (const chunk of stream) {
                 fullResponseText += chunk.text;
                 this._currentStreamingText = fullResponseText;
+                if (chunk.usage) {
+                    lastUsage = chunk.usage;
+                    if (!lastUsage.durationMs) {
+                        lastUsage.durationMs = Date.now() - startTime;
+                    }
+                }
                 this.sendMessageToWebview({ 
                     type: 'streamChunk', 
                     text: chunk.text, 
-                    done: chunk.done 
+                    done: chunk.done,
+                    usage: chunk.usage
                 });
             }
 
@@ -568,7 +583,8 @@ export class ChatSidebarViewProvider implements vscode.WebviewViewProvider {
                 if (session) {
                     session.history.push({
                         role: 'assistant',
-                        text: fullResponseText
+                        text: fullResponseText,
+                        usage: lastUsage
                     });
                     await this.saveHistory();
                 }
@@ -580,9 +596,9 @@ export class ChatSidebarViewProvider implements vscode.WebviewViewProvider {
             }
         } finally {
             if (this._currentAbortController?.signal.aborted) {
-                this.sendMessageToWebview({ type: 'streamChunk', text: '\n\n**[Aborted by user]**', done: true });
+                this.sendMessageToWebview({ type: 'streamChunk', text: '\n\n**[Aborted by user]**', done: true, usage: lastUsage });
             } else {
-                this.sendMessageToWebview({ type: 'streamChunk', text: '', done: true });
+                this.sendMessageToWebview({ type: 'streamChunk', text: '', done: true, usage: lastUsage });
             }
             this._currentStreamingText = '';
             this._currentAbortController = undefined;
@@ -715,7 +731,7 @@ export class ChatSidebarViewProvider implements vscode.WebviewViewProvider {
                                 <span class="material-symbols-outlined">attach_file</span>
                             </button>
                             <input type="file" id="file-input" class="hidden" multiple accept="image/*,audio/*,video/*,.pdf,.html,.htm,.css,.js,.ts,.json,.xml,.csv,.txt,.md,.py,.java,.c,.cpp,.go,.rs,.rb,.sh">
-                            <textarea id="chat-input" placeholder="Ask anything... (/ for commands &amp; skills)" rows="1"></textarea>
+                            <textarea id="chat-input" placeholder="/ for commands &amp; skills..." rows="1"></textarea>
                             <button id="send-btn" class="send-btn" title="Send message" data-tooltip="Send message">
                                 <span class="material-symbols-outlined">send</span>
                             </button>
